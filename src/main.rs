@@ -12,8 +12,8 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     println!("{}", &args[1]);
-    let mmu = MMU::new(&args[1]);
-    let mut cpu = CPU::new(&mmu);
+    let mut mmu = MMU::new(&args[1]);
+    let mut cpu = CPU::new(&mut mmu);
 
     cpu.start();
 
