@@ -6,7 +6,8 @@ use crate::instructions;
 pub struct CPU<'a>{
     mmu: &'a mut  MMU,
     reg: Registers,
-    flags: Flags
+    flags: Flags,
+    instMap: instructions::InstructionMap<'a>
 }
 
 impl<'a> CPU<'a>{
@@ -15,7 +16,8 @@ impl<'a> CPU<'a>{
         let cpu = CPU{
             mmu: mmu,
             reg: Registers::new(),
-            flags: Flags::new()
+            flags: Flags::new(),
+            instMap : instructions::InstructionMap::new()
         };
         return cpu;
     }
@@ -42,6 +44,11 @@ impl<'a> CPU<'a>{
     // Execute instruction and return number of cycles spent 
     fn parse_instruction(&mut self) -> u8{
         let instr: u8 = self.mmu.mem[self.reg.pc as usize ];
+
+        // Print to debug
+        self.instMap.printInstruction(instr);
+
+
         self.reg.pc += 1;
         match instr {
             0x00 => {println!("NOP "); 1}
@@ -79,10 +86,39 @@ impl<'a> CPU<'a>{
 
             0x20 => {println!("JR NZ, i8"); 3 } // TODO - check for variable cycle count
             0x21 => {println!("d16 to HL"); let nn = self.read_next_word(); self.reg.set_hl(nn); 3}
-            0x22 => {println!("LD (HL+)"); 2}
+            0x22 => {println!("LD (HL+), A"); self.mmu.write_byte(self.reg.get_hl(), self.reg.a); self.inc_hl(); 2} // TODO
+            0x23 => { let val = self.reg.get_hl() + 1; self.reg.set_hl(val); 2}
+            0x24 => { self.reg.h = self.alu_inc((self.reg.h)); 1}
+            0x25 => { self.reg.h = self.alu_dec(self.reg.h); 1}
+            0x26 => { self.reg.h = self.read_next_byte(); 2}
+            0x27 => { 1 } // TODO - OP: DAA
+            0x28 => { 3} // TODO
+            0x29 => { let val = self.alu_addnn(self.reg.get_hl()); self.reg.set_hl(val) ;  2}
+            0x2A => {let val = self.reg.get_hl(); self.reg.a = self.mmu.read_byte(val); self.reg.set_hl(val - 1); 2 } // TODO
+            0x2B => { let val = self.reg.get_hl() - 1; self.reg.set_hl(val); 2  }
+            0x2C => { self.reg.l = self.alu_inc(self.reg.l); 1}
+            0x2D => { self.reg.l = self.alu_inc(self.reg.l); 1}
+            0x2E => { self.reg.l = self.read_next_byte(); 2}
+            0x2F => { 1 } // TODO
 
+
+            // TODO : Check on get_hld()
+            0x30 => {3} // TODO
             0x31 => {println!("Load to stack pointer"); self.reg.sp = self.read_next_word(); 3 }
             0x32 => {println!("LDD (HL), A"); let loc = self.reg.get_hld(); self.mmu.write_byte(loc, self.reg.a)  ;println!("PC IS AT {}", self.reg.pc); 2}
+            0x33 => {let val = self.reg.get_hl() + 1; self.reg.set_hl(val); 2}
+            0x34 => { self.mmu.write_byte(self.reg.get_hl(), self.alu_inc(self.mmu.read_byte(self.reg.get_hl()))); 3}    
+            0x35 => { self.mmu.write_byte(self.reg.get_hl(), self.alu_dec(self.mmu.read_byte(self.reg.get_hl()))); 3}
+            0x36 => { self.mmu.write_byte(self.reg.get_hl(), self.read_next_byte()); 3}
+            0x37 => {1} // TODO: SCF
+            0x38 => {3} // TODO JR
+            0x39 => { let val = self.alu_addnn(self.reg.sp); self.reg.set_hl(val); 2 }
+            0x3A => { let val = self.reg.get_hl(); self.reg.a = self.mmu.read_byte(val); self.reg.set_hl(val - 1) ;2}
+            0x3B => { self.reg.sp -= 1; 2 }
+            0x3C => { self.reg.a = self.alu_inc(self.reg.a); 1}
+            0x3D => { self.reg.a = self.alu_dec(self.reg.a); 1}
+            0x3E => { self.reg.a = self.read_next_byte(); 2}
+            0x3F => { 1 } // TODO: CCF
 
             0xAF => {println!("{:#x} XOR with A", instr); self.alu_xor(self.reg.a); 1}
             0xFE => {println!("Compare"); let n = self.read_next_byte(); self.alu_cmp(n); 2 }
@@ -91,39 +127,24 @@ impl<'a> CPU<'a>{
         
     }
 
-    fn execute_instruction(&mut self, instr: instructions::Instruction) -> u8{
-        match instr{
-            instructions::Instruction::ADD { op1, op2 } => {}
-            instructions::Instruction::ADC => {}
-            instructions::Instruction::SUB => {}
-            instructions::Instruction::SUBC => {}
-            instructions::Instruction::DEC { op } => {}
-            instructions::Instruction::INC { op } => {}
-            instructions::Instruction::OR => {}
-            instructions::Instruction::XOR => {}
-            instructions::Instruction::CP { op } => {}
-            instructions::Instruction::LD { op1, op2 } => {
-                // op1 and op2 -> 8 bit registers
-                match (op1, op2){
-                    (instructions::Operand::OP8, instructions::Operand::OP8) => {
-                    }
 
-                    (instructions::Operand::OP8, instructions::Operand::n8) => {}
-                    (instructions::Operand::OP16, instructions::Operand::OP8) => {}
-                    (instructions::Operand::OP16, instructions::Operand::OP16) => {}
-                    (instructions::Operand::OP16, instructions::Operand::n8) => {}
-                    (instructions::Operand::OP16, instructions::Operand::n16) => {}
-                    (instructions::Operand::n16, instructions::Operand::OP8) => {}
-                    (instructions::Operand::n16, instructions::Operand::OP16) => {}
-                    _ => {panic!("Invalid combination of Load")}
-                }
-                
-            }
-        }
+    fn ldi(&mut self){ // Necessary ?
 
+    }
 
+    fn inc_bc(&mut self){
+        let val = self.reg.get_bc();
+        self.reg.set_hl(val);
+    }
 
-        1
+    fn inc_hl(&mut self){
+        let val = self.reg.get_hl() + 1;
+        self.reg.set_hl(val);
+    }
+
+    fn dec_hl(&mut self){
+        let val = self.reg.get_hl() - 1;
+        self.reg.set_hl(val);
     }
 
     // Might want to change to account for sbc or just create a sbc function
