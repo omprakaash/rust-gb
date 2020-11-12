@@ -1,6 +1,7 @@
 use crate::registers::Registers;
 use crate::registers::Flags;
 use crate::mmu::MMU;
+use crate::instructions;
 
 pub struct CPU<'a>{
     mmu: &'a mut  MMU,
@@ -22,7 +23,7 @@ impl<'a> CPU<'a>{
 
     pub fn start(&mut self){
         while(self.reg.pc < 256){
-            self.execute_instruction();
+            self.parse_instruction();
         }
     }
 
@@ -39,22 +40,47 @@ impl<'a> CPU<'a>{
     }
 
     // Execute instruction and return number of cycles spent 
-    fn execute_instruction(&mut self) -> u8{
+    fn parse_instruction(&mut self) -> u8{
         let instr: u8 = self.mmu.mem[self.reg.pc as usize ];
         self.reg.pc += 1;
         match instr {
-            0x00 =>{println!("NOP "); 1}
+            0x00 => {println!("NOP "); 1}
             0x01 => {println!("LD BC u16"); let nn = self.read_next_word(); self.reg.set_bc(nn); 3}
             0x03 => {println!("INC BC"); let val = self.reg.get_bc() + 1; self.reg.set_bc(val); 2}
             0x04 => {println!("INC B"); self.reg.b = self.alu_inc(self.reg.b);  1 }
             0x05 => {println!("DEC B"); self.reg.b = self.alu_dec(self.reg.b) ; 1}
             0x06 => {println!("LD B, u8"); let val = self.read_next_byte(); self.reg.b = val; 2}
-            0x07 => {println!("RLCA");  1} // TODO
-            0x08 => {println!()} // TODO
-            0x09 => {println!("ADD HL, BC"); ; 2}
+            0x07 => {println!("RLCA");  1} // TODO - set CARRY Bit ?
+            0x08 => {3} // TODO
+            0x09 => {println!("ADD HL, BC"); let val = self.alu_addnn(self.reg.get_bc()); self.reg.set_hl(val) ; 2}
+            0x0A => {println!("LD A, (BC)"); let val = self.mmu.read_byte(self.reg.get_bc()); self.reg.a = val; 2}
+            0x0B => {println!("DEC BC"); let val = self.reg.get_bc() - 1; self.reg.set_bc(val)  ;2 }
+            0x0C => {println!("INC C"); self.reg.c = self.alu_inc(self.reg.c); 1}
+            0x0D => {println!("DEC C"); self.reg.c = self.alu_dec(self.reg.c); 1}
+            0x0E => {println!("LD C, u8"); let n = self.read_next_byte(); self.reg.c = n ;2}
+            0x0F => {println!("RRCA"); 1} // TODO - SET CARRY BIT ?
 
+            0x10 => {println!("STOP"); 2 } // TODO
+            0x11 => {println!("LD DE, u16"); let nn = self.read_next_word(); self.reg.set_de(nn); 3}
+            0x12 => {println!("LD (DE), A"); self.mmu.write_byte(self.reg.get_de(), self.reg.a); 2}
+            0x13 => {println!("INC DE");let val = self.reg.get_de() + 1; self.reg.set_de(val) ; 2}
+            0x14 => {println!("INC D"); self.reg.d = self.alu_inc(self.reg.d); 1 }
+            0x15 => {println!("DEC D"); self.reg.d = self.alu_dec(self.reg.d) ; 1}
+            0x16 => {println!("LD D, u8"); self.reg.d = self.read_next_byte() ; 2}
+            0x17 => {println!("RLA") ; 1} // TODO
+            0x18 => {println!("JR i8"); ; 3} // TODO and check timing
+            0x19 => {println!("ADD HL, DE"); let val = self.alu_addnn(self.reg.get_de()); self.reg.set_hl(val); 2}
+            0x1A => {println!("LD A, (DE)"); self.reg.a = self.mmu.read_byte(self.reg.get_de()); 2}
+            0x1B => {println!("DEC DE"); let val = self.reg.get_de() - 1; self.reg.set_de(val) ; 2}
+            0x1C => {println!("INC E"); self.reg.e = self.alu_inc(self.reg.e); 1}
+            0x1D => {println!("DEC E"); self.reg.e = self.alu_dec(self.reg.e) ; 1}
+            0x1E => {println!("LD E, u8"); self.reg.e = self.read_next_byte(); 2}
+            0x1F => {println!("RRA");  1} // TODO
 
+            0x20 => {println!("JR NZ, i8"); 3 } // TODO - check for variable cycle count
             0x21 => {println!("d16 to HL"); let nn = self.read_next_word(); self.reg.set_hl(nn); 3}
+            0x22 => {println!("LD (HL+)"); 2}
+
             0x31 => {println!("Load to stack pointer"); self.reg.sp = self.read_next_word(); 3 }
             0x32 => {println!("LDD (HL), A"); let loc = self.reg.get_hld(); self.mmu.write_byte(loc, self.reg.a)  ;println!("PC IS AT {}", self.reg.pc); 2}
 
@@ -63,6 +89,41 @@ impl<'a> CPU<'a>{
             _ => {panic!("Unrecognized opcode") ; }
         }
         
+    }
+
+    fn execute_instruction(&mut self, instr: instructions::Instruction) -> u8{
+        match instr{
+            instructions::Instruction::ADD { op1, op2 } => {}
+            instructions::Instruction::ADC => {}
+            instructions::Instruction::SUB => {}
+            instructions::Instruction::SUBC => {}
+            instructions::Instruction::DEC { op } => {}
+            instructions::Instruction::INC { op } => {}
+            instructions::Instruction::OR => {}
+            instructions::Instruction::XOR => {}
+            instructions::Instruction::CP { op } => {}
+            instructions::Instruction::LD { op1, op2 } => {
+                // op1 and op2 -> 8 bit registers
+                match (op1, op2){
+                    (instructions::Operand::OP8, instructions::Operand::OP8) => {
+                    }
+
+                    (instructions::Operand::OP8, instructions::Operand::n8) => {}
+                    (instructions::Operand::OP16, instructions::Operand::OP8) => {}
+                    (instructions::Operand::OP16, instructions::Operand::OP16) => {}
+                    (instructions::Operand::OP16, instructions::Operand::n8) => {}
+                    (instructions::Operand::OP16, instructions::Operand::n16) => {}
+                    (instructions::Operand::n16, instructions::Operand::OP8) => {}
+                    (instructions::Operand::n16, instructions::Operand::OP16) => {}
+                    _ => {panic!("Invalid combination of Load")}
+                }
+                
+            }
+        }
+
+
+
+        1
     }
 
     // Might want to change to account for sbc or just create a sbc function

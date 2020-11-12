@@ -1,6 +1,7 @@
 mod cpu;
 mod mmu;
 mod registers;
+mod instructions;
 
 use cpu::CPU;
 use mmu::MMU;

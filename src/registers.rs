@@ -1,3 +1,5 @@
+use crate::instructions;
+
 pub struct Registers {
     pub a: u8,
     pub b: u8,
@@ -41,6 +43,37 @@ impl Registers{
             l:0,
             pc:0,
             sp:0
+        }
+    }
+
+    pub fn set_reg_val(&mut self, reg: instructions::OP8){
+
+    }
+
+    pub fn set_reg_val_16(&mut self, reg: instructions::OP16){
+
+    }
+
+    pub fn get_reg_val_8(&self, reg: instructions::OP8) -> &mut u8{
+        match reg{
+            A => {&mut self.a}
+            B => {&mut self.b}
+            C => {&mut self.c}
+            D => {&mut self.d}
+            E => {&mut self.e}
+            H => {&mut self.h}
+            L => {&mut self.l}
+            _ => {panic!("Unidentified register / Could be a value")}
+        }
+    }
+
+    pub fn get_reg_val_16(&self, target: instructions::OP16) -> u16{
+        match target{
+            BC => {self.get_bc()}
+            DE => {self.get_de()}
+            HL => {self.get_hl()}
+            SP => {self.sp}
+            PC => {self.pc}
         }
     }
 
