@@ -8,6 +8,7 @@ pub struct Registers {
     pub e: u8,
     pub h: u8,
     pub l: u8,
+    pub f : u8,
     pub pc: u16,
     pub sp: u16
 }
@@ -41,8 +42,66 @@ impl Registers{
             e:0,
             h:0,
             l:0,
+            f:0,
             pc:0,
             sp:0
+        }
+    }
+
+
+    pub fn get_zero(&self) -> bool {
+         (self.f & 0x80) >> 7 == 1
+    }
+
+    pub fn get_neg(&self) -> bool{
+         (self.f & 0x40) >> 6 == 1
+    }
+
+    pub fn get_half(&self) -> bool {
+        (self.f & 0x20) >> 5 == 1
+    }
+
+    pub fn get_carry(&self) -> bool {
+        (self.f & 0x10) >> 4 == 1
+    }
+
+    pub fn set_zero(&mut self, set: bool){
+        let mask = 0x80;
+        if set{
+            self.f = self.f | mask;            
+        }
+        else{
+            self.f = self.f & (! mask);
+        }
+    }
+
+    pub fn set_neg(&mut self, set: bool){
+        let mask = 0x40;
+        if set{
+            self.f = self.f | mask; 
+        }
+        else{
+            self.f = self.f & (!mask);
+        }
+    }
+
+    pub fn set_half(&mut self, set: bool){
+        let mask = 0x20;
+        if set{
+            self.f = self.f | mask; 
+        }
+        else{
+            self.f = self.f & (!mask);
+        }
+    }
+
+    pub fn set_carry(&mut self, set: bool){
+        let mask = 0x10;
+        if set{
+            self.f = self.f | mask; 
+        }
+        else{
+            self.f = self.f & (!mask);
         }
     }
 
@@ -77,6 +136,21 @@ impl Registers{
     pub fn set_hl(&mut self, val: u16) {
         self.h = ((val & 0xFF00) >> 8) as u8;
         self.l = (val & 0xFF) as u8;
+    }
+
+    pub fn set_af(&mut self, val: u16, flags: &mut Flags){
+        self.a = ((val & 0xFF00) >> 8) as u8;
+
+        let F = (val & 0x00FF) as u8;
+
+        flags.Z = ( (F & 0x80) >> 7) == 1;
+        flags.N = ( (F & 0x40) >> 6) == 1;
+        flags.H = ( (F & 0x20) >> 5) == 1;
+        flags.C = ( (F & 0x10) >> 4) == 1;
+    }
+
+    pub fn get_af(&self) -> u16{
+        ((self.a as u16) << 8) | self.f as u16
     }
 
 }

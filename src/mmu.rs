@@ -34,11 +34,16 @@ impl MMU{
     }
 
     pub fn read_word(&self, loc: u16) -> u16{
-        (self.mem[loc as usize] as u16) << 8 | (self.mem[(loc+1) as usize]) as u16 
+        self.mem[loc as usize] as u16 | ((self.mem[(loc+1) as usize] as u16) << 8)
     }
 
     pub fn write_byte(&mut self, loc: u16, val: u8){
         self.mem[loc as usize] = val;
+    }
+
+    pub fn write_word(&mut self, loc: u16, val: u16){
+        self.mem[loc as usize] = (val & 0xFF) as u8;
+        self.mem[(loc + 1) as usize] = (val >> 8) as u8;
     }
 
 
