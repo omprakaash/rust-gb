@@ -17,15 +17,11 @@ impl MMU{
         let mut f= File::open(file).expect("Unable to open file");
         f.read(&mut mmu.mem).expect("Unable to read boot rom file");
 
-
         for (i, val) in mmu.mem.iter().enumerate(){
-            if (i < 256){
-                println!("{:x?}", val);
-            }
-            else{
-                break;
-            }
+            
+            //print!("{:x?}", val);
         }
+        print!("\n");
         return mmu;   
     }
 

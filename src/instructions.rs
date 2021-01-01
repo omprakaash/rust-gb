@@ -35,8 +35,6 @@ impl<'a> InstructionMap<'a>{
 
 }
 
-
-
 pub enum Instructions{
     ADD{op1: Operand, op2: Operand},
     ADC,

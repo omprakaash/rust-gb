@@ -35,21 +35,22 @@ impl Registers{
 
     pub fn new() -> Registers{
         Registers{
-            a:0,
+            a:0x11,
             b:0,
-            c:0,
+            c:0x13,
             d:0,
-            e:0,
-            h:0,
-            l:0,
-            f:0,
-            pc:0,
-            sp:0
+            e:0xd8,
+            h:0x01,
+            l:0x4d,
+            f:0x80,
+            pc:0x0100,
+            sp:0xffee,
         }
     }
 
 
     pub fn get_zero(&self) -> bool {
+         //print!(" The zero flag is : {}", (self.f & 0x80) >> 7 == 1);
          (self.f & 0x80) >> 7 == 1
     }
 
@@ -83,6 +84,7 @@ impl Registers{
         else{
             self.f = self.f & (!mask);
         }
+        //print!(" The zero flag is set to: {}", (self.f & 0x80) >> 7 == 1);
     }
 
     pub fn set_half(&mut self, set: bool){
@@ -138,15 +140,9 @@ impl Registers{
         self.l = (val & 0xFF) as u8;
     }
 
-    pub fn set_af(&mut self, val: u16, flags: &mut Flags){
+    pub fn set_af(&mut self, val: u16){
         self.a = ((val & 0xFF00) >> 8) as u8;
-
-        let F = (val & 0x00FF) as u8;
-
-        flags.Z = ( (F & 0x80) >> 7) == 1;
-        flags.N = ( (F & 0x40) >> 6) == 1;
-        flags.H = ( (F & 0x20) >> 5) == 1;
-        flags.C = ( (F & 0x10) >> 4) == 1;
+        self.f = (val & 0xF0) as u8; // Discard the 4 least sig bits of f
     }
 
     pub fn get_af(&self) -> u16{

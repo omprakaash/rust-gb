@@ -6,8 +6,8 @@ use crate::instructions;
 pub struct CPU<'a>{
     mmu: &'a mut  MMU,
     reg: Registers,
-    flags: Flags,
-    instMap: instructions::InstructionMap<'a>
+    instMap: instructions::InstructionMap<'a>,
+    halted: bool
 }
 
 impl<'a> CPU<'a>{
@@ -16,16 +16,19 @@ impl<'a> CPU<'a>{
         let cpu = CPU{
             mmu: mmu,
             reg: Registers::new(),
-            flags: Flags::new(),
-            instMap : instructions::InstructionMap::new()
+            instMap : instructions::InstructionMap::new(),
+            halted: false // Temp solution
         };
         return cpu;
     }
 
 
     pub fn start(&mut self){
-        while(self.reg.pc < 256){
+        while !self.halted {
             self.parse_instruction();
+
+            
+
         }
     }
 
@@ -45,59 +48,70 @@ impl<'a> CPU<'a>{
     fn parse_instruction(&mut self) -> u8{
         let instr: u8 = self.mmu.mem[self.reg.pc as usize ];
 
+        //println!("pc: {:#06X?}, OP: {:X?}, Z: {}, N: {},  C: {}, AF: {:#06X?}, BC: {:#06X?}, SP: {:#06X?}, HL: {:#06X?}, DE: {:#06X?}", self.reg.pc, instr, self.reg.get_zero(), self.reg.get_neg(), self.reg.get_carry(), self.reg.get_af(),self.reg.get_bc(), self.reg.sp, self.reg.get_hl(), self.reg.get_de());
+
         // Print to debug
-        self.instMap.printInstruction(instr);
+        //self.instMap.printInstruction(instr);
+
+        //print!("{}", self.mmu.read_byte(0xFF02));
+        if self.mmu.read_byte(0xff02) == 0x81 {
+            let c: char = self.mmu.read_byte(0xff01) as char;
+            print!("{}", c );
+            self.mmu.write_byte(0xff02, 0x00);
+        }
 
         let cur_pc = self.reg.pc;
         self.reg.pc += 1;
         match instr {
-            0x00 => {println!("NOP "); 1}
-            0x01 => {println!("LD BC u16"); let nn = self.read_next_word(); self.reg.set_bc(nn); 3}
-            0x03 => {println!("INC BC"); let val = self.reg.get_bc() + 1; self.reg.set_bc(val); 2}
-            0x04 => {println!("INC B"); self.reg.b = self.alu_inc(self.reg.b);  1 }
-            0x05 => {println!("DEC B"); self.reg.b = self.alu_dec(self.reg.b) ; 1}
-            0x06 => {println!("LD B, u8"); let val = self.read_next_byte(); self.reg.b = val; 2}
-            0x07 => {println!("RLCA");  self.alu_rlca(); 1} 
+            0x00 => { 1}
+            0x01 => { let nn = self.read_next_word(); self.reg.set_bc(nn); 3}
+            0x03 => { let val = self.reg.get_bc().wrapping_add(1); self.reg.set_bc(val); 2}
+            0x04 => { self.reg.b = self.alu_inc(self.reg.b);  1 }
+            0x05 => { self.reg.b = self.alu_dec(self.reg.b) ; 1}
+            0x06 => {let val = self.read_next_byte(); self.reg.b = val; 2}
+            0x07 => {  self.alu_rlca(); 1} 
             0x08 => {let mem_address = self.read_next_word(); self.mmu.write_word(mem_address, self.reg.sp); 5} 
-            0x09 => {println!("ADD HL, BC"); let val = self.alu_addnn(self.reg.get_bc()); self.reg.set_hl(val) ; 2}
-            0x0A => {println!("LD A, (BC)"); let val = self.mmu.read_byte(self.reg.get_bc()); self.reg.a = val; 2}
-            0x0B => {println!("DEC BC"); let val = self.reg.get_bc() - 1; self.reg.set_bc(val)  ;2 }
-            0x0C => {println!("INC C"); self.reg.c = self.alu_inc(self.reg.c); 1}
-            0x0D => {println!("DEC C"); self.reg.c = self.alu_dec(self.reg.c); 1}
-            0x0E => {println!("LD C, u8"); let n = self.read_next_byte(); self.reg.c = n ;2}
-            0x0F => {println!("RRCA"); 1} // TODO - SET CARRY BIT ?
+            0x09 => { let val = self.alu_addnn(self.reg.get_bc()); self.reg.set_hl(val) ; 2}
+            0x0A => { let val = self.mmu.read_byte(self.reg.get_bc()); self.reg.a = val; 2}
+            0x0B => { let val = self.reg.get_bc() - 1; self.reg.set_bc(val); 2 }
+            0x0C => { self.reg.c = self.alu_inc(self.reg.c); 1}
+            0x0D => { self.reg.c = self.alu_dec(self.reg.c); 1}
+            0x0E => { let n = self.read_next_byte(); self.reg.c = n; 2}
+            0x0F => { self.alu_rrca(); 1} // TODO - SET CARRY BIT ?
 
-            0x10 => {println!("STOP"); 2 } // TODO
-            0x11 => {println!("LD DE, u16"); let nn = self.read_next_word(); self.reg.set_de(nn); 3}
-            0x12 => {println!("LD (DE), A"); self.mmu.write_byte(self.reg.get_de(), self.reg.a); 2}
-            0x13 => {println!("INC DE");let val = self.reg.get_de() + 1; self.reg.set_de(val) ; 2}
-            0x14 => {println!("INC D"); self.reg.d = self.alu_inc(self.reg.d); 1 }
-            0x15 => {println!("DEC D"); self.reg.d = self.alu_dec(self.reg.d) ; 1}
-            0x16 => {println!("LD D, u8"); self.reg.d = self.read_next_byte() ; 2}
-            0x17 => {println!("RLA") ; self.alu_rla() ; 1} 
-            0x18 => {println!("JR i8"); self.jr(); 3}
-            0x19 => {println!("ADD HL, DE"); let val = self.alu_addnn(self.reg.get_de()); self.reg.set_hl(val); 2}
-            0x1A => {println!("LD A, (DE)"); self.reg.a = self.mmu.read_byte(self.reg.get_de()); 2}
-            0x1B => {println!("DEC DE"); let val = self.reg.get_de() - 1; self.reg.set_de(val) ; 2}
-            0x1C => {println!("INC E"); self.reg.e = self.alu_inc(self.reg.e); 1}
-            0x1D => {println!("DEC E"); self.reg.e = self.alu_dec(self.reg.e) ; 1}
-            0x1E => {println!("LD E, u8"); self.reg.e = self.read_next_byte(); 2}
-            0x1F => {println!("RRA"); self.alu_rra(); 1} // TODO
+            0x10 => { self.halted = true; 2 } // TODO
+            0x11 => { let nn = self.read_next_word(); self.reg.set_de(nn); 3}
+            0x12 => { self.mmu.write_byte(self.reg.get_de(), self.reg.a); 2}
+            0x13 => {let val = self.reg.get_de() + 1; self.reg.set_de(val) ; 2}
+            0x14 => { self.reg.d = self.alu_inc(self.reg.d); 1 }
+            0x15 => { self.reg.d = self.alu_dec(self.reg.d) ; 1}
+            0x16 => { self.reg.d = self.read_next_byte() ; 2}
+            0x17 => { self.alu_rla() ; 1} 
+            0x18 => { self.jr(); 3}
+            0x19 => { let val = self.alu_addnn(self.reg.get_de()); self.reg.set_hl(val); 2}
+            0x1A => { self.reg.a = self.mmu.read_byte(self.reg.get_de()); 2}
+            0x1B => {  let val = self.reg.get_de().wrapping_sub(1); self.reg.set_de(val) ; 2}
+            0x1C => { self.reg.e = self.alu_inc(self.reg.e); 1}
+            0x1D => { self.reg.e = self.alu_dec(self.reg.e) ; 1}
+            0x1E => { self.reg.e = self.read_next_byte(); 2}
+            0x1F => { self.alu_rra(); 1} // TODO ??
 
             0x20 => {
-                println!("JR NZ, i8"); 
+                 
                 if !self.reg.get_zero() {
                     self.jr();
                     3
                 } 
                 else{
+                    //print!( "NZ NOT JUMPING \n\n\n\n\n\n");
+                    self.reg.pc += 1;
                     3
                 } 
             }
-            0x21 => {println!("d16 to HL"); let nn = self.read_next_word(); self.reg.set_hl(nn); 3}
-            0x22 => {println!("LD (HL+), A"); self.mmu.write_byte(self.reg.get_hl(), self.reg.a); self.inc_hl(); 2} // TODO
+            0x21 => {let nn = self.read_next_word(); self.reg.set_hl(nn); 3}
+            0x22 => { self.mmu.write_byte(self.reg.get_hl(), self.reg.a); self.inc_hl(); 2} // TODO
             0x23 => { let val = self.reg.get_hl() + 1; self.reg.set_hl(val); 2}
-            0x24 => { self.reg.h = self.alu_inc((self.reg.h)); 1}
+            0x24 => { self.reg.h = self.alu_inc(self.reg.h); 1}
             0x25 => { self.reg.h = self.alu_dec(self.reg.h); 1}
             0x26 => { self.reg.h = self.read_next_byte(); 2}
             0x27 => { 1 } // TODO - OP: DAA
@@ -107,16 +121,17 @@ impl<'a> CPU<'a>{
                     3
                 } 
                 else{
+                    self.reg.pc += 1;
                     3
                 } 
             } // TODO
             0x29 => { let val = self.alu_addnn(self.reg.get_hl()); self.reg.set_hl(val) ;  2}
-            0x2A => {let val = self.reg.get_hl(); self.reg.a = self.mmu.read_byte(val); self.reg.set_hl(val - 1); 2 } // TODO
+            0x2A => {let val = self.reg.get_hl(); self.reg.a = self.mmu.read_byte(val); self.reg.set_hl(val + 1); 2 } // TODO
             0x2B => { let val = self.reg.get_hl() - 1; self.reg.set_hl(val); 2  }
             0x2C => { self.reg.l = self.alu_inc(self.reg.l); 1}
             0x2D => { self.reg.l = self.alu_inc(self.reg.l); 1}
             0x2E => { self.reg.l = self.read_next_byte(); 2}
-            0x2F => { 1 } // TODO
+            0x2F => { self.alu_cpl(); 1 } // TODO
 
 
             // TODO : Check on get_hld()
@@ -126,14 +141,15 @@ impl<'a> CPU<'a>{
                     3
                 }
                 else{
+                    self.reg.pc += 1;
                     2
                 }
             } 
-            0x31 => {println!("Load to stack pointer"); self.reg.sp = self.read_next_word(); 3 }
-            0x32 => {println!("LDD (HL), A"); let loc = self.reg.get_hld(); self.mmu.write_byte(loc, self.reg.a)  ;println!("PC IS AT {}", self.reg.pc); 2}
+            0x31 => { self.reg.sp = self.read_next_word(); 3 }
+            0x32 => {let loc = self.reg.get_hld(); self.mmu.write_byte(loc, self.reg.a)  ; 2}
             0x33 => {let val = self.reg.get_hl() + 1; self.reg.set_hl(val); 2}
             0x34 => { let loc = self.reg.get_hl(); let new_val = self.mmu.read_byte(loc) + 1; self.mmu.write_byte(loc, new_val)  ; 3  }
-            0x35 => { let loc = self.reg.get_hl(); let new_val = self.mmu.read_byte(loc) - 1; self.mmu.write_byte(loc, new_val)  ; 3  }
+            0x35 => { let loc = self.reg.get_hl(); let new_val = self.mmu.read_byte(loc).wrapping_sub(1); self.mmu.write_byte(loc, new_val)  ; 3  }
             0x36 => { let val = self.read_next_byte(); self.mmu.write_byte(self.reg.get_hl(), val); 3}
             0x37 => { self.scf() ; 1}
             0x38 => { 
@@ -142,6 +158,8 @@ impl<'a> CPU<'a>{
                     3
                 }
                 else{
+                    //print!("NOT JUMPING \n\n\n\n\n");
+                    self.reg.pc += 1;
                     2
                 }
             } 
@@ -210,7 +228,7 @@ impl<'a> CPU<'a>{
             0x73 => { self.mmu.write_byte(self.reg.get_hl(), self.reg.e); 2 }
             0x74 => { self.mmu.write_byte(self.reg.get_hl(), self.reg.h); 2 }
             0x75 => { self.mmu.write_byte(self.reg.get_hl(), self.reg.l); 2 }
-            0x76 => { 1 } // TODO: HALT
+            0x76 => { self.halted = true; 1 } // TODO: HALT
             0x77 => { self.mmu.write_byte(self.reg.get_hl(), self.reg.a); 2 }
             0x78 => { self.reg.a = self.reg.b; 1 }
             0x79 => { self.reg.a = self.reg.c; 1 }
@@ -292,8 +310,8 @@ impl<'a> CPU<'a>{
             // RET NZ - Check Timing 
             0xC0 => {  
                 if !self.reg.get_zero()  {
-                    let retAddress = self.pop();
-                    self.reg.pc = retAddress;
+                    let ret_address = self.pop();
+                    self.reg.pc = ret_address;
                 }
                 2
             }
@@ -304,11 +322,15 @@ impl<'a> CPU<'a>{
                     let jp_address = self.read_next_word();
                     self.reg.pc = jp_address;
                 }
+                else{
+                    self.reg.pc += 2;
+                }
                 3
             }
             0xC3 => {
-                let jpAddress = self.read_next_word();
-                self.reg.pc = jpAddress;
+                let jp_address = self.read_next_word();
+                //print!("Jumping to {:x?}", jp_address);
+                self.reg.pc = jp_address;
                 3
             }
             0xC4 => {
@@ -322,6 +344,7 @@ impl<'a> CPU<'a>{
                     4
                 }
                 else{
+                    self.reg.pc += 2;
                     3
                 }
             }
@@ -345,11 +368,12 @@ impl<'a> CPU<'a>{
                     4
                 }
                 else{
+                    self.reg.pc += 2;
                     3
                 }
             }
             0xCB =>{
-                print! ("PREFIX CB");
+                //print! ("PREFIX CB");
                 1
             }
             0xCC => {
@@ -358,7 +382,9 @@ impl<'a> CPU<'a>{
                     self.reg.pc = self.read_next_word();
                     6
                 }
-                else { 3 }
+                else { 
+                    self.reg.pc += 2;
+                    3 }
             }
             0xCD => {
                 self.push(self.reg.pc + 2);
@@ -383,6 +409,9 @@ impl<'a> CPU<'a>{
                     let jp_address = self.read_next_word();
                     self.reg.pc = jp_address;
                 }
+                else{
+                    self.reg.pc += 2;
+                }
                 3
             }
             0xD4 => {
@@ -396,6 +425,7 @@ impl<'a> CPU<'a>{
                     4
                 }
                 else{
+                    self.reg.pc += 2;
                     3
                 }
             }
@@ -420,6 +450,7 @@ impl<'a> CPU<'a>{
                     4
                 }
                 else{
+                    self.reg.pc += 2;
                     3
                 }
             }
@@ -430,6 +461,7 @@ impl<'a> CPU<'a>{
                     6
                 }
                 else{
+                    self.reg.pc += 2;
                     3
                 } 
             }
@@ -444,20 +476,20 @@ impl<'a> CPU<'a>{
             0xE7 => { self.push(cur_pc); self.reg.pc = 0x0020; 4 }
             0xE8 => { 4 } // TODO
             0xE9 => { self.reg.pc = self.reg.get_hl(); 2  }
-            0xEA => { let writeAddress = self.read_next_word(); self.mmu.write_byte(writeAddress, self.reg.a); 4 }
+            0xEA => { let write_address = self.read_next_word(); self.mmu.write_byte(write_address, self.reg.a); 4 }
             0xEE => { let val = self.read_next_byte(); self.alu_xor(val); 2}
             0xEF => { self.push(cur_pc); self.reg.pc = 0x0028; 4}
 
             0xF0 => { let val = self.read_next_byte() as u16; self.reg.a = self.mmu.read_byte(0xFF00 + val); 3}
-            0xF1 => { let val = self.pop(); self.reg.set_af(val, &mut self.flags); 3}
+            0xF1 => { let val = self.pop(); self.reg.set_af(val); 3}
             0xF2 => { self.reg.a = self.mmu.read_byte(0xff00 + (self.reg.c as u16)); 2 }
             0xF3 => { 1 } // TODO - Disable Interrupts after the next instruction
             0xF5 => { self.push(self.reg.get_af()); 4 }
             0xF6 => { let val = self.read_next_byte(); self.alu_or(val); 2 }
             0xF7 => { self.push(cur_pc); self.reg.pc = 0x0030; 4 }
-            0xF8 => { 3 }
+            0xF8 => { 3 } // TODO
             0xF9 => { self.reg.sp = self.reg.get_hl(); 2}
-            0xFA => { let memAddress = self.read_next_word(); let val = self.mmu.read_byte(memAddress); self.reg.a = val; 4}
+            0xFA => { let mem_address = self.read_next_word(); let val = self.mmu.read_byte(mem_address); self.reg.a = val; 4}
             0xFB => {1} // TODO - Enable interrupts after the next instruction
             0xFE => { let val = self.read_next_byte(); self.alu_cmp(val); 2}
             0xFF => { self.push(cur_pc); self.reg.pc = 0x0038; 4}
@@ -486,11 +518,6 @@ impl<'a> CPU<'a>{
         ((high_byte as u16) << 8) | (low_byte as u16)
     }
 
-
-    fn ldi(&mut self){ // Necessary ?
-
-    }
-
     fn inc_bc(&mut self){
         let val = self.reg.get_bc();
         self.reg.set_hl(val);
@@ -508,12 +535,12 @@ impl<'a> CPU<'a>{
 
     // Might want to change to account for sbc or just create a sbc function
     fn alu_sub(&mut self, n: u8) -> u8{
-        self.flags.H = (self.reg.a & 0xf) < (n & 0xf) ;
+        self.reg.set_half((self.reg.a & 0xf) < (n & 0xf)) ;
         self.reg.set_carry(self.reg.a < n);
         let new_val = self.reg.a.wrapping_sub(n);
         // Setting Flags
-        self.reg.set_zero(self.reg.a == 0);
-        self.flags.N = true;
+        self.reg.set_zero(new_val == 0);
+        self.reg.set_neg(true);
         new_val
     }
 
@@ -532,8 +559,8 @@ impl<'a> CPU<'a>{
         self.reg.a = self.reg.a ^ val;
         self.reg.set_zero(self.reg.a == 0);
         self.reg.set_carry(false);
-        self.flags.H = false;
-        self.flags.N = false;
+        self.reg.set_half(false);
+        self.reg.set_neg(false);
     }
 
     fn alu_adc(&mut self, n: u8) -> u8 {
@@ -545,37 +572,39 @@ impl<'a> CPU<'a>{
 
     fn alu_add(&mut self, n:u8) -> u8{
         let a = self.reg.a;
-        let new_a = a + n;
+        let new_a = a.wrapping_add(n);
 
-        self.flags.H = ((a & 0x0f) + (n &0x0f)) & 0x10 > 0;
+        self.reg.set_zero(new_a == 0);
+        self.reg.set_half(((a & 0x0f) + (n &0x0f)) & 0x10 > 0);
         self.reg.set_carry( (a as u16) + (n as u16) > 0xFF); // Check calc
-        self.flags.N = false;
+        self.reg.set_neg(false);
 
         new_a
     }
  
     fn alu_dec(&mut self, cur_val: u8) -> u8{
-        let dec_val = cur_val - 1;
+        let dec_val = cur_val.wrapping_sub(1);
         self.reg.set_zero( dec_val == 0);
-        self.flags.N = true;
-        self.flags.H = (self.reg.a & 0x0f) < (1 & 0x0f);
+        self.reg.set_neg(true);
+        self.reg.set_half((self.reg.a & 0x0f) < (1 & 0x0f));
         dec_val
     }
 
     // Used only for 8-bit registers
     fn alu_inc(&mut self, cur_val: u8) -> u8{
-        let inc_val = cur_val + 1;
+        let inc_val = cur_val.wrapping_add(1) ;
         self.reg.set_half(((cur_val & 0x0f) + (1 & 0x0f)) & 0x10 > 0); // Check
         self.reg.set_zero( inc_val == 0);
-        self.flags.N = false;
+        self.reg.set_neg(false);
+        //println!("INC VAL E: {}", inc_val);
         inc_val
     }
 
     fn alu_addnn(&mut self, val: u16) -> u16{
         let cur_val = self.reg.get_hl();
-        let new_val = cur_val + val;
+        let new_val = cur_val.wrapping_add(val);
         self.reg.set_zero(false);
-        self.flags.H = ((cur_val & 0x0f00) + (val & 0x0f00)) & 0x1000 > 0;
+        self.reg.set_half(((cur_val & 0x0f00) + (val & 0x0f00)) & 0x1000 > 0);
         self.reg.set_carry( (cur_val as u32) + (new_val as u32) > 0xFFFF);
         new_val
     }
@@ -583,8 +612,8 @@ impl<'a> CPU<'a>{
     fn alu_and(&mut self, val: u8){
         self.reg.a = self.reg.a & val;
         self.reg.set_zero( self.reg.a == 0);
-        self.flags.N = false;
-        self.flags.H = true;
+        self.reg.set_neg(false);
+        self.reg.set_half(true);
         self.reg.set_carry(false) ;
     }
 
@@ -592,19 +621,19 @@ impl<'a> CPU<'a>{
         self.reg.a = self.reg.a | val;
         self.reg.set_zero(self.reg.a == 0);
         self.reg.set_carry(false) ;
-        self.flags.H = false;
-        self.flags.N = false;
+        self.reg.set_half(false);
+        self.reg.set_neg(false);
     }
 
     fn scf(&mut self){
         self.reg.set_carry(true);
-        self.reg.set_zero(false);
         self.reg.set_neg(false);
+        self.reg.set_half(true);
     }
 
     fn ccf(&mut self){
         self.reg.set_carry( ! self.reg.get_carry()); // Flip carry bit
-        self.reg.set_zero(false);
+        self.reg.set_half(false);
         self.reg.set_neg(false);
     }
 
@@ -659,7 +688,20 @@ impl<'a> CPU<'a>{
     }
 
     fn jr(&mut self){
-        self.reg.pc =  self.reg.pc + ((self.read_next_byte() as i8)) as u16; // Check conversions
+        let inc = self.read_next_byte() as i8;
+        let cur_pc = self.reg.pc ;
+        ////print!("Increment: {}\n", inc);
+        //print!("\nCur pc is : {:x?} ", cur_pc );
+       
+        //self.reg.pc = (((self.reg.pc - 1 ) as u32 as i32) + (inc as i32)) as u16;
+        self.reg.pc = cur_pc.wrapping_add(inc as u16);
+        //print!("\nNew pc is : {:x?} ", self.reg.pc  );
+    }
+
+    fn alu_cpl(&mut self){
+        self.reg.a = ! self.reg.a;
+        self.reg.set_neg(true);
+        self.reg.set_half(true);
     }
 
 }
