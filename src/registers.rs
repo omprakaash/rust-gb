@@ -35,16 +35,16 @@ impl Registers{
 
     pub fn new() -> Registers{
         Registers{
-            a:0x11,
+            a:0x01,
             b:0,
             c:0x13,
             d:0,
             e:0xd8,
             h:0x01,
             l:0x4d,
-            f:0x80,
+            f:0xB0,
             pc:0x0100,
-            sp:0xffee,
+            sp:0xfffe,
         }
     }
 

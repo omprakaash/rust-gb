@@ -34,6 +34,12 @@ impl MMU{
     }
 
     pub fn write_byte(&mut self, loc: u16, val: u8){
+        /*if loc == 0xFF44{
+            println!("Writing to Loc: 0xFF44");
+        }
+        if val == 0x90{
+            println!("Val == 0x90");
+        }*/
         self.mem[loc as usize] = val;
     }
 
