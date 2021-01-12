@@ -50,7 +50,7 @@ impl<'a> CPU<'a>{
 
         //println!("pc: {:06X?}, OP: {:X?}, Z: {}, N: {},  C: {}, AF: {:06X?}, BC: {:06X?}, SP: {:06X?}, HL: {:06X?}, DE: {:06X?}", self.reg.pc, instr, self.reg.get_zero(), self.reg.get_neg(), self.reg.get_carry(), self.reg.get_af(),self.reg.get_bc(), self.reg.sp, self.reg.get_hl(), self.reg.get_de());
 
-        //println!("A: {:02X?} F: {:02X?} B: {:02X?} C: {:02X?} D: {:02X?} E: {:02X?} H: {:02X?} L: {:02X?} SP: {:04X?} PC: 00:{:04X?} ({:02X?} {:02X?} {:02X?} {:02X?})", self.reg.a, self.reg.f, self.reg.b, self.reg.c, self.reg.d, self.reg.e, self.reg.h, self.reg.l, self.reg.sp, self.reg.pc, self.mmu.read_byte(self.reg.pc),self.mmu.read_byte(self.reg.pc+1), self.mmu.read_byte(self.reg.pc+2), self.mmu.read_byte(self.reg.pc+3));
+        println!("A: {:02X?} F: {:02X?} B: {:02X?} C: {:02X?} D: {:02X?} E: {:02X?} H: {:02X?} L: {:02X?} SP: {:04X?} PC: 00:{:04X?} ({:02X?} {:02X?} {:02X?} {:02X?})", self.reg.a, self.reg.f, self.reg.b, self.reg.c, self.reg.d, self.reg.e, self.reg.h, self.reg.l, self.reg.sp, self.reg.pc, self.mmu.read_byte(self.reg.pc),self.mmu.read_byte(self.reg.pc+1), self.mmu.read_byte(self.reg.pc+2), self.mmu.read_byte(self.reg.pc+3));
 
         // Print to debug
         //self.instMap.printInstruction(instr);
@@ -58,7 +58,7 @@ impl<'a> CPU<'a>{
         //print!("{}", self.mmu.read_byte(0xFF02));
         if self.mmu.read_byte(0xff02) == 0x81 {
             let c: char = self.mmu.read_byte(0xff01) as char;
-            print!("{}", c );
+            //print!("{}", c );
             self.mmu.write_byte(0xff02, 0x00);
         }
 
@@ -149,8 +149,8 @@ impl<'a> CPU<'a>{
             } 
             0x31 => { self.reg.sp = self.read_next_word(); 3 }
             0x32 => {let loc = self.reg.get_hld(); self.mmu.write_byte(loc, self.reg.a)  ; 2}
-            0x33 => {let val = self.reg.get_hl().wrapping_add(1); self.reg.set_hl(val); 2}
-            0x34 => { let loc = self.reg.get_hl(); let new_val = self.mmu.read_byte(loc) + 1; self.mmu.write_byte(loc, new_val)  ; 3  }
+            0x33 => {self.reg.sp = self.reg.sp.wrapping_add(1); 2}
+            0x34 => { let loc = self.reg.get_hl(); let new_val = self.mmu.read_byte(loc).wrapping_add(1); self.mmu.write_byte(loc, new_val)  ; 3  }
             0x35 => { let loc = self.reg.get_hl(); let new_val = self.mmu.read_byte(loc).wrapping_sub(1); self.mmu.write_byte(loc, new_val)  ; 3  }
             0x36 => { let val = self.read_next_byte(); self.mmu.write_byte(self.reg.get_hl(), val); 3}
             0x37 => { self.scf() ; 1}
@@ -477,7 +477,7 @@ impl<'a> CPU<'a>{
             0xE5 => { self.push(self.reg.get_hl()); 4 }
             0xE6 => { let val = self.read_next_byte(); self.alu_and(val); 2}
             0xE7 => { self.push(cur_pc); self.reg.pc = 0x0020; 4 }
-            0xE8 => { 4 } // TODO
+            0xE8 => { let val = self.read_next_byte() as i8;    4 } // TODO
             0xE9 => { self.reg.pc = self.reg.get_hl(); 2  }
             0xEA => { let write_address = self.read_next_word(); self.mmu.write_byte(write_address, self.reg.a); 4 }
             0xEE => { let val = self.read_next_byte(); self.alu_xor(val); 2}
@@ -898,14 +898,32 @@ impl<'a> CPU<'a>{
         inc_val
     }
 
-    fn alu_addnn(&mut self, val: u16) -> u16{
+    /*fn alu_addnn(&mut self, val: u16) -> u16{
         let cur_val = self.reg.get_hl();
         let new_val = cur_val.wrapping_add(val);
-        //self.reg.set_zero(false);
         self.reg.set_half(((cur_val & 0x0f00) + (val & 0x0f00)) & 0x1000 > 0);
         self.reg.set_carry( (cur_val as u32) + (val as u32) > 0xFFFF);
         self.reg.set_neg(false);
         new_val
+    }*/
+
+    fn alu_addnn(&mut self, val: u16) -> u16{
+        let l_byte = (val & 0x00ff) as u8;
+        let u_byte = ((val & 0xff00) >> 8) as u8;
+        let u_carry:u8;
+        if (l_byte as u16) + (self.reg.l as u16) > 0x00ff {
+            u_carry = 1;
+        }
+        else{
+            u_carry = 0;
+        }
+
+        self.reg.set_neg(false);
+        self.reg.set_carry(self.reg.get_hl() as u32 + val as u32 > 0xFFFF);
+        self.reg.set_half(  (u_byte & 0x0f) + (self.reg.h & 0x0f) + u_carry  > 0x0f);
+
+        self.reg.get_hl().wrapping_add(val)
+
     }
 
     fn alu_and(&mut self, val: u8){
@@ -927,7 +945,7 @@ impl<'a> CPU<'a>{
     fn scf(&mut self){
         self.reg.set_carry(true);
         self.reg.set_neg(false);
-        self.reg.set_half(true);
+        self.reg.set_half(false);
     }
 
     fn ccf(&mut self){
@@ -951,21 +969,24 @@ impl<'a> CPU<'a>{
 
     fn alu_rlca(&mut self){
         self.reg.a = self.alu_rlc(self.reg.a);
+        self.reg.set_zero(false);
     }
 
 
-    fn alu_rl(&mut self, val: u8) -> u8{
+    fn alu_rl(&mut self, mut val: u8) -> u8{
         let carry = match self.reg.get_carry(){
             false => 0x00,
             true => 0x01,
         }; // Carry into bit 0
+
         self.reg.set_carry((val >> 7) == 1);
-        self.reg.set_zero(false);
         self.reg.set_half(false);
         self.reg.set_neg(false);
 
-        (val << 1) | carry
+        val = (val << 1) | carry;
+        self.reg.set_zero(val == 0);
 
+        val
     }
 
     fn alu_rla(&mut self){ // Check
@@ -1057,7 +1078,7 @@ impl<'a> CPU<'a>{
     }
 
     fn alu_swap(&mut self, mut val: u8) -> u8{
-        val = (val | 0x0f) | (val | 0xf0);
+        val = ((val & 0x0f) << 4 )| ((val & 0xf0)) >> 4;
         self.reg.set_zero(val == 0);
         self.reg.set_carry(false);
         self.reg.set_half(false);
@@ -1104,6 +1125,14 @@ impl<'a> CPU<'a>{
     fn set(&mut self, bit_pos: u8, val: u8) -> u8{
         let mask: u8 = 0x01 << bit_pos;
         val | mask
+    }
+
+    fn sp_add(&mut self, val: i8){
+        self.reg.sp = self.reg.sp.wrapping_add(val as u16);
+        self.reg.set_zero(false);
+        self.reg.set_neg(false);
+        self.reg.set_carry( self.reg.sp as u32 + val as u32 > 0xFFFF);
+        
     }
 
 }
