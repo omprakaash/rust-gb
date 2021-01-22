@@ -2,9 +2,11 @@ mod cpu;
 mod mmu;
 mod registers;
 mod instructions;
+mod timer;
 
 use cpu::CPU;
 use mmu::MMU;
+use timer::Timer;
 use registers::Registers;
 use std::env;
 

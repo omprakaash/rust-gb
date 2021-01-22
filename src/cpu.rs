@@ -1,16 +1,22 @@
 
-use std::{fs::read, path::Prefix};
+use std::{collections::btree_set::Intersection, fs::read, iter::Enumerate, path::Prefix};
 
 use crate::registers::Registers;
 use crate::registers::Flags;
 use crate::mmu::MMU;
 use crate::instructions;
 
+
+
 pub struct CPU<'a>{
     mmu: &'a mut  MMU,
     reg: Registers,
     instMap: instructions::InstructionMap<'a>,
-    halted: bool
+    halted: bool,
+    ime: bool, 
+    enable_interrupts: bool, // Should interrutps be enabled this execution cycle
+    disable_interrupts: bool,
+    interrupt_routines: [u16; 5]
 }
 
 impl<'a> CPU<'a>{
@@ -20,16 +26,36 @@ impl<'a> CPU<'a>{
             mmu: mmu,
             reg: Registers::new(),
             instMap : instructions::InstructionMap::new(),
-            halted: false // Temp solution
+            halted: false, // Temp solution
+            ime: false,
+            enable_interrupts: false,
+            disable_interrupts: false,
+            interrupt_routines: [ 0x0040, 0x0048, 0x0050, 0x0058, 0x0060 ]
         };
         return cpu;
     }
 
 
     pub fn start(&mut self){
-        while !self.halted {
-            self.parse_instruction();
-        }
+        loop{
+            if self.enable_interrupts{
+                //print!("HAHA Turning on interrupts ! ");
+                self.ime = true;
+                self.enable_interrupts = false;
+            }
+            if self.disable_interrupts{
+                self.ime = false;
+                self.disable_interrupts = false;
+            }
+            if !self.halted {
+                let m_cycles = self.execute_instruction();
+                self.mmu.step(m_cycles);
+            }
+            else{
+                self.mmu.step(1);
+            }
+            self.interrupt_check(); // Check regardless of ime to get out of halt state. 
+        }    
     }
 
     fn read_next_byte(&mut self) -> u8{
@@ -44,13 +70,59 @@ impl<'a> CPU<'a>{
         val
     }
 
+    fn interrupt_check(&mut self){ 
+
+        let mut bit_mask:u8 = 0x01; // Used to chech corresponding bits in IE and IF.
+        let mut bit_pos:u8 = 0;
+
+        let ie_flag = self.mmu.read_byte(0xFFFF);
+        let mut if_flag = self.mmu.read_byte(0xFF0F);
+
+
+        if (ie_flag & (bit_mask << 2)) > 0 {
+           // println!("Correct");
+        }
+        //println!("IF: {:x?}", if_flag);
+        if (if_flag & (bit_mask << 2)) > 0 {
+            //println!("Correct for the sencond tine");
+        }
+        
+
+        while bit_pos < 5{
+            
+            if (ie_flag & ( bit_mask)) > 0 && (if_flag & (bit_mask)) > 0{
+                self.halted = false;
+                //println!("Hello {}", self.ime);
+                if self.ime{
+                    // Servive the interrupt
+                    self.ime = false;
+                    //print!("Hello");
+
+                    // Should I move this outside the if check ??
+                    //print!("Before: {}", if_flag);
+                    if_flag = if_flag & (! bit_mask); // CLear the current set bit in IF
+                    //print!("After: {}", if_flag);
+                    self.mmu.write_byte(0xFF0F, if_flag); // Temp Sol. Need to check and change
+
+                    self.push(self.reg.pc);
+                    //print!("Juming to vector: {:04x?}", self.interrupt_routines[bit_pos as usize]);
+                    self.reg.pc = self.interrupt_routines[bit_pos as usize];
+                    return; // Check
+                }
+            }
+            bit_pos += 1;
+            bit_mask = bit_mask << 1;
+        }
+    }
+
     // Execute instruction and return number of cycles spent 
-    fn parse_instruction(&mut self) -> u8{
+    fn execute_instruction(&mut self) -> u8{
         let instr: u8 = self.mmu.mem[self.reg.pc as usize ];
 
         //println!("pc: {:06X?}, OP: {:X?}, Z: {}, N: {},  C: {}, AF: {:06X?}, BC: {:06X?}, SP: {:06X?}, HL: {:06X?}, DE: {:06X?}", self.reg.pc, instr, self.reg.get_zero(), self.reg.get_neg(), self.reg.get_carry(), self.reg.get_af(),self.reg.get_bc(), self.reg.sp, self.reg.get_hl(), self.reg.get_de());
 
         //println!("A: {:02X?} F: {:02X?} B: {:02X?} C: {:02X?} D: {:02X?} E: {:02X?} H: {:02X?} L: {:02X?} SP: {:04X?} PC: 00:{:04X?} ({:02X?} {:02X?} {:02X?} {:02X?})", self.reg.a, self.reg.f, self.reg.b, self.reg.c, self.reg.d, self.reg.e, self.reg.h, self.reg.l, self.reg.sp, self.reg.pc, self.mmu.read_byte(self.reg.pc),self.mmu.read_byte(self.reg.pc+1), self.mmu.read_byte(self.reg.pc+2), self.mmu.read_byte(self.reg.pc+3));
+        
 
         // Print to debug
         //self.instMap.printInstruction(instr);
@@ -445,8 +517,9 @@ impl<'a> CPU<'a>{
                     2
                  }
             }
-            0xD9 => { // TODO - Return and Enable Interrupts
+            0xD9 => { 
                 self.reg.pc = self.pop();
+                self.ime = true;
                 2
             }
             0xDA => {
@@ -489,14 +562,14 @@ impl<'a> CPU<'a>{
             0xF0 => { let mem_add = 0xFF00 | self.read_next_byte() as u16;self.reg.a = self.mmu.read_byte(mem_add); 3   }
             0xF1 => { let val = self.pop(); self.reg.set_af(val); 3}
             0xF2 => { self.reg.a = self.mmu.read_byte(0xff00 + (self.reg.c as u16)); 2 }
-            0xF3 => { 1 } // TODO - Disable Interrupts after the next instruction
+            0xF3 => { self.disable_interrupts = true; 1 } // TODO - Disable Interrupts after the next instruction
             0xF5 => { self.push(self.reg.get_af()); 4 }
             0xF6 => { let val = self.read_next_byte(); self.alu_or(val); 2 }
             0xF7 => { self.push(self.reg.pc); self.reg.pc = 0x0030; 4 }
             0xF8 => { let val = self.read_next_byte() as i8; let loadVal = self.sp_add(val); self.reg.set_hl(loadVal);  3 } // TODO
             0xF9 => { self.reg.sp = self.reg.get_hl(); 2}
             0xFA => { let mem_address = self.read_next_word(); let val = self.mmu.read_byte(mem_address); self.reg.a = val; 4}
-            0xFB => {1} // TODO - Enable interrupts after the next instruction
+            0xFB => { self.enable_interrupts = true; 1} // TODO - Enable interrupts after the next instruction
             0xFE => { let val = self.read_next_byte(); self.alu_cmp(val); 2}
             0xFF => { self.push(self.reg.pc); self.reg.pc = 0x0038; 4}
 
@@ -797,10 +870,10 @@ impl<'a> CPU<'a>{
 
     fn pop(&mut self) -> u16{
         let low_byte = self.mmu.read_byte(self.reg.sp);
-        self.reg.sp += 1;
+        self.reg.sp = self.reg.sp.wrapping_add(1);
 
         let high_byte = self.mmu.read_byte(self.reg.sp);
-        self.reg.sp += 1;
+        self.reg.sp = self.reg.sp.wrapping_add(1);
 
         ((high_byte as u16) << 8) | (low_byte as u16)
     }
@@ -1043,7 +1116,7 @@ impl<'a> CPU<'a>{
         //print!("\nCur pc is : {:x?} ", cur_pc );
        
         //self.reg.pc = (((self.reg.pc - 1 ) as u32 as i32) + (inc as i32)) as u16;
-        self.reg.pc = cur_pc.wrapping_add(inc as u16);
+        self.reg.pc = cur_pc.wrapping_add(inc as u16) ;
         //print!("\nNew pc is : {:x?} ", self.reg.pc  );
     }
 
