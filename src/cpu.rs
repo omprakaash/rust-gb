@@ -36,26 +36,26 @@ impl<'a> CPU<'a>{
     }
 
 
-    pub fn start(&mut self){
-        loop{
-            if self.enable_interrupts{
-                //print!("HAHA Turning on interrupts ! ");
-                self.ime = true;
-                self.enable_interrupts = false;
-            }
-            if self.disable_interrupts{
-                self.ime = false;
-                self.disable_interrupts = false;
-            }
-            if !self.halted {
-                let m_cycles = self.execute_instruction();
-                self.mmu.step(m_cycles);
-            }
-            else{
-                self.mmu.step(1);
-            }
-            self.interrupt_check(); // Check regardless of ime to get out of halt state. 
-        }    
+    pub fn cpu_step(&mut self){
+        
+        if self.enable_interrupts{
+            //print!("HAHA Turning on interrupts ! ");
+            self.ime = true;
+            self.enable_interrupts = false;
+        }
+        if self.disable_interrupts{
+            self.ime = false;
+            self.disable_interrupts = false;
+        }
+        if !self.halted {
+            let m_cycles = self.execute_instruction();
+            self.mmu.step(m_cycles);
+        }
+        else{
+            self.mmu.step(1);
+        }
+        self.interrupt_check(); // Check regardless of ime to get out of halt state. 
+            
     }
 
     fn read_next_byte(&mut self) -> u8{

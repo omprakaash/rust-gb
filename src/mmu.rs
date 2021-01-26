@@ -1,10 +1,14 @@
 use std::{fs::File, io::Read};
 
 use crate::timer::Timer;
+use crate::ppu::PPU;
+
 
 pub struct MMU{
     pub mem: [u8;65536],
-    timer: Timer
+    timer: Timer,
+    vram: [u8; 8192],
+    ppu: PPU
 }
 
 // Need to implement custom get and set operations for different mem regions
@@ -13,7 +17,9 @@ impl MMU{
     pub fn new(file: &String) -> MMU{
         let mut mmu = MMU{
             mem: [0;65536],
-            timer: Timer::new()
+            timer: Timer::new(),
+            vram: [0; 8192],
+            ppu: PPU::new()
         };
         
         // Loading Rom
@@ -31,6 +37,7 @@ impl MMU{
 
     pub fn step(&mut self, m_cycles: u8){
         self.timer.step_cycle(m_cycles);
+        self.ppu.ppu_step(m_cycles);
     }
 
     pub fn read_byte(&self, loc: u16) -> u8{
@@ -54,12 +61,6 @@ impl MMU{
     }
 
     pub fn write_byte(&mut self, loc: u16, val: u8){
-        /*if loc == 0xFF44{
-            println!("Writing to Loc: 0xFF44");
-        }
-        if val == 0x90{
-            println!("Val == 0x90");
-        }*/
         match loc{
             
             0xFF0F | 0xFF04..=0xFF07  => {
@@ -67,7 +68,6 @@ impl MMU{
             }
             _ => {}
         }
-
         self.mem[loc as usize] = val;
         
     }

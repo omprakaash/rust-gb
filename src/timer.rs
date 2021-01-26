@@ -45,7 +45,6 @@ pub fn write_byte(&mut self, loc: u16, val: u8){
             0xFF06 => self.tma = val,
             0xFF07 => {self.tac = val; /*println!("Writing to TAC: {}", val)*/},
             0xFF0F => {
-                //println!("Writing to 0xFF0F: {}", val );
                 if (val & 0x04) > 0 {
                     self.interrupt = 1;
                 }
