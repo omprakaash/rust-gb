@@ -4,6 +4,9 @@ use crate::timer::Timer;
 use crate::ppu::PPU;
 
 
+const VRAM_START: u16 = 0x8000;
+const VRAM_END: u16 = 0x9fff;
+
 pub struct MMU{
     pub mem: [u8;65536],
     timer: Timer,
@@ -43,6 +46,11 @@ impl MMU{
     pub fn read_byte(&self, loc: u16) -> u8{
 
         match loc{
+
+            VRAM_START..=VRAM_END => {
+                self.ppu.read_byte(loc)
+            }
+
             0xFF04..=0xFF07 => {
                 self.timer.read_byte(loc)
             },
@@ -63,6 +71,9 @@ impl MMU{
     pub fn write_byte(&mut self, loc: u16, val: u8){
         match loc{
             
+            VRAM_START..=VRAM_END => {
+                self.ppu.write_byte(loc, val);
+            }
             0xFF0F | 0xFF04..=0xFF07  => {
                 self.timer.write_byte(loc, val);
             }
