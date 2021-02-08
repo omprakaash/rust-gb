@@ -10,11 +10,19 @@ const HEIGHT: usize = 144;
 const OAM_CYCLES: u16 = 80;
 const DRAW_CYCLES: u16 = 172;
 const HBLANK_CYCLES:u16 = 204;
-const VBANK_CYCLES: u16 = 4560;
+const VBANK_CYCLES: u16 = 456;
 
+// -------------- LCDC Masks --------------------
 const LCD_DISPLAY_ENABLE_MASK :u8 = 0b10000000;
 const WINDOW_TILE_MAP_MASK: u8    = 0b01000000;
 const WINDOW_DISPLAY_MASK: u8     = 0b00100000;
+const TILE_DATA_SELECT_MASK: u8   = 0b00010000;
+const BG_MAP_SELECT_MASK: u8      = 0b00001000;
+const SPRITE_SIZE_MASK: u8        = 0b00000100;
+const SPRITE_ENABLE_MASK: u8      = 0b00000010;
+const BG_WIND_ENABLE_MASK: u8     = 0b00000001;
+// ----------------------------------------------
+
 
 enum PPU_MODE{
     OAM,
@@ -27,6 +35,7 @@ pub struct PPU{
     ppu_clock: u16,
     mode: PPU_MODE,
     back_buffer: [u32; 160*144],
+    //debug_window: Window,
     window: Window,
     vram: [u8; 8192],
 
@@ -55,6 +64,14 @@ impl PPU{
             ).unwrap_or_else(|e|{
                 panic!("{}", e)
             }),
+            /*debug_window : Window::new(
+                "Tile Map",
+                255,
+                255,
+                WindowOptions::default(),
+            ).unwrap_or_else(|e|{
+                panic!("{}", e)
+            }),*/
             vram: [0; 8192],
             lcd_control: 0x91,
             lcd_stat: 0xff,
@@ -69,16 +86,17 @@ impl PPU{
 
 
     pub fn fill_scanline(&mut self){
-        let scan_line = self.ly + self.scy;
-        let line_in_tile = scan_line % 8; // Need to account for 16 size tiles mode
-        
-        //println!("ScanLine: {}", scan_line);
+        let tile_map_line = self.ly.wrapping_add(self.scy+1); // Check the +1
+        let line_in_tile = tile_map_line % 8; // Need to account for 16 size tiles mode
+       
+        //println!("SCY: {} ", self.scy);
 
-        let tile_map_row = scan_line / 8;
+        let tile_map_row = tile_map_line / 8;
 
         for tile_map_col in 0..=19{ // Need to account for SCX later on - 18 tiles in row of viewport map
 
-            let tile_num_addr: u16 = 0x9800 + ( tile_map_row as u16* 32) as u16 + (tile_map_col as u16) - 0x8000;
+            let tile_num_addr: u16 = 0x9800 + ( (tile_map_row) as u16* 32) as u16 + (tile_map_col as u16) - 0x8000;
+
             let tile_num = self.vram[tile_num_addr as usize];
 
             let tile_data_loc: u16 = 0x8000 + (tile_num as u16 * 16) as u16 - 0x8000;
@@ -96,9 +114,11 @@ impl PPU{
                 let high_bit = (row_byte_2 & bit_mask) >> (7 - (i %8));
                 let low_bit = (row_byte_1 & bit_mask) >> (7 - (i%8)); 
 
-                let color_idx = (high_bit << 1) | low_bit;
+                let color_num = (high_bit << 1) | low_bit;
                 
-                self.back_buffer[ (scan_line as u16 *160 +  i) as usize] = self.colors[color_idx as usize];
+                let color_idx = ( self.bg_pallete >> (color_num*2) ) & 0x03;
+
+                self.back_buffer[ ( (self.ly) as u16 *160 +  i)  as usize] = self.colors[color_idx as usize];
                 bit_mask = bit_mask >> 1;
 
             }
@@ -137,7 +157,7 @@ impl PPU{
 
                     self.mode = PPU_MODE::OAM;
 
-                    if self.ly >= 143 {
+                    if self.ly == 143 {
 
                         // Update Window's buffer with new data                            
                         self.draw_frame();
@@ -147,9 +167,14 @@ impl PPU{
             },
             PPU_MODE::VBLANK => {
                 if self.ppu_clock >= VBANK_CYCLES{
-                    self.mode = PPU_MODE::OAM;
                     self.ppu_clock %= VBANK_CYCLES;
-                    self.ly = 0;
+                    self.ly += 1;
+
+                    if(self.ly > 153){
+                        self.ly = 0;
+                        self.mode = PPU_MODE::OAM;
+                    }
+
                 }
             }
 
@@ -159,13 +184,24 @@ impl PPU{
     }
 
     pub fn write_byte(&mut self, loc: u16, val: u8){
-        let vram_loc = loc - 0x8000;
-        self.vram[vram_loc as usize] = val;
+        match loc{
+            0xFF42 => self.scy = val,
+            0xFF43 => self.scx = val,
+            0xFF44 => self.ly = val,
+            0xFF47 => self.bg_pallete = val,
+            _ => self.vram[(loc - 0x8000) as usize] = val
+        }
+        
     }
 
     pub fn read_byte(&self, loc: u16) -> u8{
-        self.vram[ (loc - 0x8000) as usize ]
+        match loc{
+            0xFF42 => self.scy,
+            0xFF43 => self.scx,
+            0xFF44 => self.ly,
+            0xFF47 => self.bg_pallete,
+            _ => self.vram[(loc - 0x8000) as usize] 
+        }
     }
-
 
 }

@@ -1,5 +1,3 @@
-use crate::instructions;
-
 pub struct Registers {
     pub a: u8,
     pub b: u8,
@@ -11,24 +9,6 @@ pub struct Registers {
     pub f : u8,
     pub pc: u16,
     pub sp: u16
-}
-
-pub struct Flags{
-    pub Z: bool,
-    pub N: bool,
-    pub H: bool,
-    pub C: bool
-}
-
-impl Flags{
-    pub fn new() -> Flags{
-        Flags{
-            Z: false,
-            N: false,
-            H: false,
-            C: false
-        }
-    }
 }
 
 impl Registers{
@@ -48,9 +28,7 @@ impl Registers{
         }
     }
 
-
     pub fn get_zero(&self) -> bool {
-         //print!(" The zero flag is : {}", (self.f & 0x80) >> 7 == 1);
          (self.f & 0x80) >> 7 == 1
     }
 
@@ -84,7 +62,6 @@ impl Registers{
         else{
             self.f = self.f & (!mask);
         }
-        //print!(" The zero flag is set to: {}", (self.f & 0x80) >> 7 == 1);
     }
 
     pub fn set_half(&mut self, set: bool){

@@ -4,13 +4,12 @@ mod registers;
 mod instructions;
 mod timer;
 mod ppu;
+mod cartridge;
 
 use cpu::CPU;
 use mmu::MMU;
-use ppu::PPU;
-use timer::Timer;
-use registers::Registers;
 use std::env;
+use std::time::{Instant};
 
 extern crate minifb;
 use minifb::{Key, Window, WindowOptions};
@@ -25,9 +24,18 @@ fn main() {
     let mut mmu = MMU::new(&args[1]);
     let mut cpu = CPU::new(&mut mmu);
 
+    let mut cycles:u16 = 0;
+    let mut now = Instant::now();
     loop
     {
-        cpu.cpu_step();
+            cycles = cycles.wrapping_add(cpu.cpu_step() as u16);
+            if cycles >= 17496 {
+                cycles = 0;
+                while now.elapsed().as_millis() < (16.67 as u128){
+                    
+                }
+            }
+            
     }
 
 }

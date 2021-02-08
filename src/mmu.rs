@@ -1,8 +1,8 @@
 use std::{fs::File, io::Read};
 
-use crate::timer::Timer;
+use crate::{cartridge, timer::Timer};
 use crate::ppu::PPU;
-
+use crate::cartridge::Cartridge;
 
 const VRAM_START: u16 = 0x8000;
 const VRAM_END: u16 = 0x9fff;
@@ -10,8 +10,8 @@ const VRAM_END: u16 = 0x9fff;
 pub struct MMU{
     pub mem: [u8;65536],
     timer: Timer,
-    vram: [u8; 8192],
-    ppu: PPU
+    ppu: PPU,
+    cartridge: Cartridge
 }
 
 // Need to implement custom get and set operations for different mem regions
@@ -21,19 +21,9 @@ impl MMU{
         let mut mmu = MMU{
             mem: [0;65536],
             timer: Timer::new(),
-            vram: [0; 8192],
-            ppu: PPU::new()
+            ppu: PPU::new(),
+            cartridge: Cartridge::new(file)
         };
-        
-        // Loading Rom
-        let mut f= File::open(file).expect("Unable to open file");
-        f.read(&mut mmu.mem).expect("Unable to read boot rom file");
-
-        for (i, val) in mmu.mem.iter().enumerate(){
-            
-            //print!("{:x?}", val);
-        }
-        print!("\n");
         mmu.write_byte(0xFF0F, 0xE0);
         return mmu;   
     }
@@ -46,8 +36,11 @@ impl MMU{
     pub fn read_byte(&self, loc: u16) -> u8{
 
         match loc{
+            0x0000..=0x7FFF =>{ // Check the end value ( inclusive or exclusive )
+                self.cartridge.read_byte(loc)
+            }
 
-            VRAM_START..=VRAM_END => {
+            0xFF42 | 0xFF43 | 0xFF44| 0xFF47| VRAM_START..=VRAM_END => {
                 self.ppu.read_byte(loc)
             }
 
@@ -65,28 +58,31 @@ impl MMU{
     }
 
     pub fn read_word(&self, loc: u16) -> u16{
-        self.mem[loc as usize] as u16 | ((self.mem[(loc+1) as usize] as u16) << 8)
+        /*self.mem[loc as usize] as u16 | ((self.mem[(loc.wrapping_add(1)) as usize] as u16) << 8)*/
+        self.read_byte(loc) as u16 | ((self.read_byte(loc.wrapping_add(1)) as u16) << 8)
     }
 
     pub fn write_byte(&mut self, loc: u16, val: u8){
         match loc{
-            
-            VRAM_START..=VRAM_END => {
+           
+            0x0000..=0x7FFF => {
+                self.cartridge.write_byte(loc, val);
+            }
+
+            0xFF42 | 0xFF43 | 0xFF44 | 0xFF47 | VRAM_START..=VRAM_END => {
                 self.ppu.write_byte(loc, val);
             }
             0xFF0F | 0xFF04..=0xFF07  => {
                 self.timer.write_byte(loc, val);
             }
-            _ => {}
-        }
-        self.mem[loc as usize] = val;
-        
-    }
 
+            _ => {self.mem[loc as usize] = val;}
+        }
+    }
+    
     pub fn write_word(&mut self, loc: u16, val: u16){
         self.mem[loc as usize] = (val & 0xFF) as u8;
         self.mem[(loc + 1) as usize] = (val >> 8) as u8;
     }
-
 
 }
