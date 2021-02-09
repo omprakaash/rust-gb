@@ -13,12 +13,6 @@ impl<'a> InstructionMap<'a>{
             (0x02, "LD (BC), A"),
             (0x03, "inC BC"),
             (0x04, "INC B"),
-            
-        
-        
-        
-        
-        
         ].iter().cloned().collect();
         InstructionMap{
             assemblyMap: hashMap

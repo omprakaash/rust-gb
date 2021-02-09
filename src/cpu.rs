@@ -8,6 +8,7 @@ pub struct CPU<'a>{
     ime: bool, 
     enable_interrupts: bool, // Should interrutps be enabled this execution cycle
     disable_interrupts: bool,
+    ie_change: bool,
     interrupt_routines: [u16; 5]
 }
 
@@ -21,6 +22,7 @@ impl<'a> CPU<'a>{
             ime: false,
             enable_interrupts: false,
             disable_interrupts: false,
+            ie_change: false,
             interrupt_routines: [ 0x0040, 0x0048, 0x0050, 0x0058, 0x0060 ]
         };
         return cpu;
@@ -28,14 +30,15 @@ impl<'a> CPU<'a>{
 
     pub fn cpu_step(&mut self) -> u8{
         let m_cycles;
-        if self.enable_interrupts{
-            self.ime = true;
-            self.enable_interrupts = false;
+        if self.ie_change{
+            self.enable_interrupts = true;
+            self.ie_change = false;
         }
-        if self.disable_interrupts{
+        /*if self.disable_interrupts{
             self.ime = false;
+            self.enable_interrupts = false;
             self.disable_interrupts = false;
-        }
+        }*/
         if !self.halted {
             m_cycles = self.execute_instruction();
             self.mmu.step(m_cycles);
@@ -43,6 +46,10 @@ impl<'a> CPU<'a>{
         else{
             m_cycles = 1;
             self.mmu.step(m_cycles);
+        }
+        if self.enable_interrupts{
+            self.ime = true;
+            self.enable_interrupts = false;
         }
         self.interrupt_check(); // Check regardless of ime to get out of halt state. 
         m_cycles
@@ -71,7 +78,7 @@ impl<'a> CPU<'a>{
             if (ie_flag & ( bit_mask)) > 0 && (if_flag & (bit_mask)) > 0{
                 self.halted = false;
                 if self.ime{
-                    // Servive the interrupt
+                    // Service the interrupt
                     self.ime = false;
                     if_flag = if_flag & (! bit_mask); // CLear the current set bit in IF
                     self.mmu.write_byte(0xFF0F, if_flag); // Temp Sol. Need to check and change
@@ -118,7 +125,7 @@ impl<'a> CPU<'a>{
             0x0E => { let n = self.read_next_byte(); self.reg.c = n; 2}
             0x0F => { self.alu_rrca(); 1} // TODO - SET CARRY BIT ?
 
-            0x10 => { self.halted = true; 2 } // TODO
+            0x10 => { self.halted = true; 1 } // TODO - STOP not halt
             0x11 => { let nn = self.read_next_word(); self.reg.set_de(nn); 3}
             0x12 => { self.mmu.write_byte(self.reg.get_de(), self.reg.a); 2}
             0x13 => {let val = self.reg.get_de().wrapping_add(1); self.reg.set_de(val) ; 2}
@@ -144,7 +151,7 @@ impl<'a> CPU<'a>{
                 else{
                     //print!( "NZ NOT JUMPING \n\n\n\n\n\n");
                     self.reg.pc += 1;
-                    3
+                    2
                 } 
             }
             0x21 => {let nn = self.read_next_word(); self.reg.set_hl(nn); 3}
@@ -161,7 +168,7 @@ impl<'a> CPU<'a>{
                 } 
                 else{
                     self.reg.pc += 1;
-                    3
+                    2
                 } 
             } // TODO
             0x29 => { let val = self.alu_addnn(self.reg.get_hl()); self.reg.set_hl(val) ;  2}
@@ -351,8 +358,12 @@ impl<'a> CPU<'a>{
                 if !self.reg.get_zero()  {
                     let ret_address = self.pop();
                     self.reg.pc = ret_address;
+                    5
                 }
-                2
+                else{
+                    2
+                }
+                
             }
 
             0xC1 => {let val = self.pop(); self.reg.set_bc(val) ; 3}
@@ -360,17 +371,19 @@ impl<'a> CPU<'a>{
                 if !self.reg.get_zero() {
                     let jp_address = self.read_next_word();
                     self.reg.pc = jp_address;
+                    4
                 }
                 else{
                     self.reg.pc += 2;
+                    3
                 }
-                3
+                
             }
             0xC3 => {
                 let jp_address = self.read_next_word();
                 //print!("Jumping to {:x?}", jp_address);
                 self.reg.pc = jp_address;
-                3
+                4
             }
             0xC4 => {
                 if !self.reg.get_zero(){
@@ -394,8 +407,12 @@ impl<'a> CPU<'a>{
                 if self.reg.get_zero(){
                     let ret_address = self.pop();
                     self.reg.pc = ret_address;
+                    5
                 }
-                2
+                else{
+                    2
+                }
+                
             }
             0xC9 => {
                 self.reg.pc = self.pop();
@@ -448,11 +465,13 @@ impl<'a> CPU<'a>{
                 if !self.reg.get_carry(){
                     let jp_address = self.read_next_word();
                     self.reg.pc = jp_address;
+                    4
                 }
                 else{
                     self.reg.pc += 2;
+                    3
                 }
-                3
+                
             }
             0xD4 => {
                 if !self.reg.get_carry() {
@@ -484,7 +503,7 @@ impl<'a> CPU<'a>{
             0xD9 => { 
                 self.reg.pc = self.pop();
                 self.ime = true;
-                2
+                4
             }
             0xDA => {
                 if self.reg.get_carry() {
@@ -517,7 +536,7 @@ impl<'a> CPU<'a>{
             0xE6 => { let val = self.read_next_byte(); self.alu_and(val); 2}
             0xE7 => { self.push(self.reg.pc); self.reg.pc = 0x0020; 4 }
             0xE8 => { let val = self.read_next_byte() as i8; self.reg.sp = self.sp_add(val); 4 } // TODO
-            0xE9 => { self.reg.pc = self.reg.get_hl(); 2  }
+            0xE9 => { self.reg.pc = self.reg.get_hl(); 1  }
             0xEA => { let write_address = self.read_next_word(); self.mmu.write_byte(write_address, self.reg.a); 4 }
             0xEE => { let val = self.read_next_byte(); self.alu_xor(val); 2}
             0xEF => { self.push(self.reg.pc); self.reg.pc = 0x0028; 4}
@@ -526,14 +545,14 @@ impl<'a> CPU<'a>{
             0xF0 => { let mem_add = 0xFF00 | self.read_next_byte() as u16;self.reg.a = self.mmu.read_byte(mem_add); 3   }
             0xF1 => { let val = self.pop(); self.reg.set_af(val); 3}
             0xF2 => { self.reg.a = self.mmu.read_byte(0xff00 + (self.reg.c as u16)); 2 }
-            0xF3 => { self.disable_interrupts = true; 1 } // TODO - Disable Interrupts after the next instruction
+            0xF3 => { self.ime = false; self.ie_change = false; self.enable_interrupts = false ;  1 } // TODO - Disable Interrupts after the next instruction
             0xF5 => { self.push(self.reg.get_af()); 4 }
             0xF6 => { let val = self.read_next_byte(); self.alu_or(val); 2 }
             0xF7 => { self.push(self.reg.pc); self.reg.pc = 0x0030; 4 }
             0xF8 => { let val = self.read_next_byte() as i8; let loadVal = self.sp_add(val); self.reg.set_hl(loadVal);  3 } // TODO
             0xF9 => { self.reg.sp = self.reg.get_hl(); 2}
             0xFA => { let mem_address = self.read_next_word(); let val = self.mmu.read_byte(mem_address); self.reg.a = val; 4}
-            0xFB => { self.enable_interrupts = true; 1} // TODO - Enable interrupts after the next instruction
+            0xFB => { self.ie_change = true; 1} // TODO - Enable interrupts after the next instruction
             0xFE => { let val = self.read_next_byte(); self.alu_cmp(val); 2}
             0xFF => { self.push(self.reg.pc); self.reg.pc = 0x0038; 4}
 

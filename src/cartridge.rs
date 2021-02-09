@@ -1,15 +1,18 @@
-use std::{fs::File, io::Read};
+use std::{fs::File, io::Read, vec};
 
 // Supports No MBC and MBC-1
 pub struct Cartridge{
     mbc_type: u8, // Type of mbc
     rom_size: u32,
     ram_size: u32,
-    rom_bank: u8,
+    bank1_reg: u8,
+    bank2_reg: u8,
     ram_bank: u8,
     ram_enabled: bool,
+    rom_bitmask: u8, 
     mbc_mode: u8, // Ram mode or Rom mode
     storage: Vec<u8>,
+    //ext_ram: Vec<u8>
 }
 
 impl Cartridge{
@@ -37,9 +40,11 @@ impl Cartridge{
             mbc_type: mbc_type,
             rom_size: rom_size,
             ram_size: init_hdr[0x0149] as u32,
-            rom_bank: 1,
+            bank1_reg: 1,
+            bank2_reg: 0,
             ram_bank: 0,
             ram_enabled: false,
+            rom_bitmask: 0x3, // Need to set according to rom size
             mbc_mode: 0,
             storage: vec![0; rom_size as usize]
         };
@@ -79,25 +84,14 @@ impl Cartridge{
                         }
                         _ => val & 0x1F
                     };
-                    //print!("Previous value of Rom Bank# : {:02X?}", self.rom_bank);
-                    self.rom_bank = ((self.rom_bank & 0xE0) | low_5_bits) % 4;
-                    println!(" Low 5 bits: {:02X? }, Rom Bank# set to: {:02X?}", low_5_bits, self.rom_bank);
-                    if self.rom_bank == 0{
-                        self.rom_bank += 1;
-                    }
-                    
+                    self.bank1_reg = low_5_bits ;
+                    println!(" Low 5 bits: {:02X? },  Bank1_Reg set to: {:02X?}", low_5_bits, self.bank1_reg);
                 }
 
                 0x4000..=0x5FFF => {
-
-
                     // If ROM mode - Change upper 2 bits of rom_bank
                     if self.mbc_mode == 0{
-                        print!("Changing rom Bank _ upper 2 bits with val: {:02X}", val);
-                        self.rom_bank = (self.rom_bank & 0x1F) | ((val & 0x03) << 5) ;
-                        if self.rom_bank == 0{
-                            self.rom_bank += 1;
-                        }
+                        self.bank2_reg = val & 0x3;
                     }
                     else{
                         println!("Maybe need to impl RAM banking");
@@ -120,8 +114,6 @@ impl Cartridge{
                 }
 
             }
-
-
         }
         else{
             println!("Writing to cartridge when no MBC is present");
@@ -137,9 +129,10 @@ impl Cartridge{
             match loc{
                 0x0000..=0x3FFF => {  self.storage[loc as usize] }
                 0x4000..=0x7FFF => {
-                    let rom_offset: u32 =(self.rom_bank  )as u32 * 0x4000 ;
-                    //println!("ROM BANK: {}, loc: {:04X?}", self.rom_bank, loc);
-                    let addr: usize = (rom_offset + (loc - 0x4000) as u32) as usize;
+                    let rom_bank = ((self.bank2_reg << 5) | self.bank1_reg) & self.rom_bitmask;
+                    let rom_offset: u32 =(rom_bank  )as u32 * 0x4000 ;
+                    //println!("ROM BANK: {}, loc: {:04X?}", rom_bank, loc);
+                    //let addr: usize = (rom_offset + (loc - 0x4000) as u32) as usize;
                     //println!("Addr: {:04X?}", addr);
                     self.storage[ (rom_offset + (loc - 0x4000) as u32) as usize]
                 }
