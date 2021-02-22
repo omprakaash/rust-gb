@@ -5,6 +5,7 @@ mod instructions;
 mod timer;
 mod ppu;
 mod cartridge;
+mod util;
 
 use cpu::CPU;
 use mmu::MMU;

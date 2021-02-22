@@ -65,7 +65,6 @@ pub fn write_byte(&mut self, loc: u16, val: u8){
             self.write_byte(0xFF04, self.div);
         }
 
-
         self.time_helper = self.time_helper.wrapping_add((m_cycles * 4) as u16);
 
         if (self.tac >> 2) & 0x01 != 0{ // If timer is enabled

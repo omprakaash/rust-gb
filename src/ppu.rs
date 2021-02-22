@@ -1,6 +1,8 @@
 extern crate minifb;
 
-use std::f32::consts::LOG2_E;
+use std::{borrow::Borrow, f32::consts::LOG2_E};
+use crate::util::*;
+
 
 use minifb::{Window, WindowOptions};
 
@@ -17,12 +19,14 @@ const LCD_DISPLAY_ENABLE_MASK :u8 = 0b10000000;
 const WINDOW_TILE_MAP_MASK: u8    = 0b01000000;
 const WINDOW_DISPLAY_MASK: u8     = 0b00100000;
 const TILE_DATA_SELECT_MASK: u8   = 0b00010000;
-const BG_MAP_SELECT_MASK: u8      = 0b00001000;
-const SPRITE_SIZE_MASK: u8        = 0b00000100;
+const BG_MAP_SELECT_POS: u8      =  3;
+const SPRITE_SIZE_BIT_POS: u8     = 2;
 const SPRITE_ENABLE_MASK: u8      = 0b00000010;
-const BG_WIND_ENABLE_MASK: u8     = 0b00000001;
+const BG_WIND_ENABLE_BIT_POS: u8  = 0;
 // ----------------------------------------------
 
+
+const WHITE: u32 = 0x00ffffff;
 
 enum PPU_MODE{
     OAM,
@@ -35,16 +39,19 @@ pub struct PPU{
     ppu_clock: u16,
     mode: PPU_MODE,
     back_buffer: [u32; 160*144],
-    //debug_window: Window,
     window: Window,
     vram: [u8; 8192],
+    oam_mem: [u8; 160], // 0xFE00 - 0xFE9F
 
-    lcd_control: u8, // Addr: 0xFF40
-    lcd_stat: u8, // Addr: 0xFF41 
-    ly: u8, // Addr: 0xFF44 - Current Scanline number
-    scx: u8, // Addr: 0xFF43
-    scy: u8, // Addr: 0xFF42
-    bg_pallete: u8,// Addr: 0xFF47
+    lcd_control: u8,   // Addr: 0xFF40
+    lcd_stat: u8,      // Addr: 0xFF41 
+    ly: u8,            // Addr: 0xFF44 - Current Scanline number
+    scx: u8,           // Addr: 0xFF43
+    scy: u8,           // Addr: 0xFF42
+
+    bg_pallete: u8,    // Addr: 0xFF47
+    obj_pallete_1: u8, // Addr: 0xFF48
+    obj_pallete_2: u8, // Addr: 0xFF49
 
     colors: [u32; 4],
     sprite_line_data: [u8; 10] // Used to hold sprite data for current line
@@ -73,60 +80,151 @@ impl PPU{
                 panic!("{}", e)
             }),*/
             vram: [0; 8192],
+            oam_mem: [0; 160],
             lcd_control: 0x91,
             lcd_stat: 0xff,
             ly: 0,
             scx: 0,
             scy: 0,
             bg_pallete: 0xFC,
-            colors: [ 0x00ffffff,0x00C0C0C0,0x00606060, 0 ], // Minifb pixel data format
+            obj_pallete_1: 0xFF,
+            obj_pallete_2: 0xFF,
+            colors: [0x00ffffff ,0x00A0A0A0,0x00555555, 0 ], // Minifb pixel data format
             sprite_line_data: [0; 10]
         }
     }
 
 
     pub fn fill_scanline(&mut self){
-        let tile_map_line = self.ly.wrapping_add(self.scy+1); // Check the +1
-        let line_in_tile = tile_map_line % 8; // Need to account for 16 size tiles mode
-       
-        //println!("SCY: {} ", self.scy);
 
-        let tile_map_row = tile_map_line / 8;
+        // Render Background
+        if test_bit_u8(self.lcd_control, BG_WIND_ENABLE_BIT_POS)  {
+            let background_map_line = self.ly.wrapping_add(self.scy+1); // Check the +1
+        
+            // The row in the 32x32 tile map -> (32*8 X 32*8 pixel map)
+            let tile_map_row = background_map_line / 8;
 
-        for tile_map_col in 0..=19{ // Need to account for SCX later on - 18 tiles in row of viewport map
+            // Line # in individual tile
+            let line_in_tile = background_map_line % 8; // Need to account for 16 size tiles mode
 
-            let tile_num_addr: u16 = 0x9800 + ( (tile_map_row) as u16* 32) as u16 + (tile_map_col as u16) - 0x8000;
+            for tile_map_col in 0..=19{ // Need to account for SCX later on - 18 tiles in row of viewport map
 
-            let tile_num = self.vram[tile_num_addr as usize];
+                let background_map_base = if test_bit_u8(self.lcd_control, 3) {0x9C00} else {0x9800};
+                let tile_num_addr: u16 = background_map_base + ( (tile_map_row) as u16* 32) as u16 + (tile_map_col as u16) - 0x8000;
 
-            let tile_data_loc: u16 = 0x8000 + (tile_num as u16 * 16) as u16 - 0x8000;
-           
-            let row_byte_1 = self.vram[(tile_data_loc + (line_in_tile * 2) as u16) as usize];
-            let row_byte_2 = self.vram[(tile_data_loc + (line_in_tile * 2 + 1) as u16)  as usize];
+                let tile_num = self.vram[tile_num_addr as usize];
 
-            let low = tile_map_col * 8;
-            let high = low + 8;
+                let tile_data_loc = if test_bit_u8(self.lcd_control, 4){ 
+                    0x8000 + (tile_num as u16 * 16) as u16 - 0x8000;
+                }
+                else{
+                    0x8800 + (tile_num as i16 * 16) as u16 - 0x8000;
+                };
 
-            let mut bit_mask = 0x80;
+                let tile_data_loc: u16 = 0x8000 + (tile_num as u16 * 16) as u16 - 0x8000;
+            
+                let row_byte_1 = self.vram[(tile_data_loc + (line_in_tile * 2) as u16) as usize];
+                let row_byte_2 = self.vram[(tile_data_loc + (line_in_tile * 2 + 1) as u16)  as usize];
 
-            for i in low..high{
+                let low = tile_map_col * 8;
+                let high = low + 8;
 
-                let high_bit = (row_byte_2 & bit_mask) >> (7 - (i %8));
-                let low_bit = (row_byte_1 & bit_mask) >> (7 - (i%8)); 
+                let mut bit_mask = 0x80;
 
-                let color_num = (high_bit << 1) | low_bit;
-                
-                let color_idx = ( self.bg_pallete >> (color_num*2) ) & 0x03;
+                for i in low..high{
 
-                self.back_buffer[ ( (self.ly) as u16 *160 +  i)  as usize] = self.colors[color_idx as usize];
-                bit_mask = bit_mask >> 1;
+                    let high_bit = (row_byte_2 & bit_mask) >> (7 - (i %8));
+                    let low_bit = (row_byte_1 & bit_mask) >> (7 - (i%8)); 
 
+                    let color_num = (high_bit << 1) | low_bit;
+                    
+                    let color_idx = ( self.bg_pallete >> (color_num*2) ) & 0x03;
+                    
+                    self.back_buffer[ ( (self.ly) as u16 *160 +  i)  as usize] = self.colors[color_idx as usize];
+                    
+                    bit_mask = bit_mask >> 1;
+
+                }   
             }
         }
+
+        // Rendering Sprites
+
+        // For each sprite in OAM check if sprite appears in current scanline
+        for oam_idx in 0..40{
+
+            let y_pos:i32 = self.oam_mem[oam_idx*4] as i32 - 16;
+            let x_pos:i32 = self.oam_mem[oam_idx*4 + 1] as i32 - 8;
+            let tile_num = self.oam_mem[oam_idx*4 + 2];
+            let sprite_attr = self.oam_mem[oam_idx*4 + 3];
+            let sprite_y_size: i32 = if test_bit_u8(self.lcd_control, SPRITE_SIZE_BIT_POS){
+                16
+            }else{
+                8
+            };
+            let x_flip = test_bit_u8(sprite_attr, 5 );
+            let y_flip = test_bit_u8(sprite_attr, 6 ) ;
+
+            //println!("Y_Pos: {}, sprite_y_size: {}, LY: {}", y_pos, sprite_y_size, self.ly);
+
+            if self.ly >= (y_pos as u8) && (self.ly as i32) < y_pos + sprite_y_size{
+
+                //println!("Hello");
+
+                let mut line_in_sprite = self.ly - (y_pos as u8);
+
+                if y_flip{
+                    line_in_sprite = sprite_y_size as u8 - line_in_sprite - 1 ;
+                }
+
+                if line_in_sprite as i32 >= sprite_y_size{
+                    panic!("Line in sprite can not be greater than sprite size: LINE: {}, SPRITE SIZE: {} ", line_in_sprite, sprite_y_size);
+                }
+
+                let tile_data_loc: u16 = 0x8000 + (tile_num as u16 * 16) as u16 - 0x8000;
+            
+                let row_byte_1 = self.vram[(tile_data_loc + (line_in_sprite * 2) as u16) as usize];
+                let row_byte_2 = self.vram[(tile_data_loc + (line_in_sprite * 2 + 1) as u16)  as usize];
+                let mut bit_mask = 0x80;
+
+                // Stepping through the 8 pixels in a sprites row
+                for sprite_col in 0..8{
+                    //println!("X_pos: {}, sprite_col: {}", x_pos, sprite_col);
+                    if(x_pos + sprite_col) >= 0{
+                        let mut a = sprite_col;
+                        if x_flip{
+                            //println!("OLd {}", sprite_col);
+                            a = 7 - sprite_col;
+                        }
+
+                        let high_bit = (row_byte_2 >> (7 - a )) & 0x01;
+                        let low_bit = (row_byte_1  >> (7 -  a )) & 0x01;
+                        let color_num = (high_bit << 1) | low_bit;
+                        
+                        let color_idx =  if test_bit_u8(sprite_attr, 4)
+                        {
+                            (self.obj_pallete_2 >> (color_num*2)) & 0x03
+                        }else{
+                            (self.obj_pallete_1 >> (color_num*2)) & 0x03
+                        };
+                        
+                        let color = self.colors[color_idx as usize];
+                        //println!("Drawing a sprite !");
+                        if color != WHITE  {
+                            self.back_buffer[ (self.ly as u16 * 160 + (x_pos + sprite_col) as u16) as usize ] = self.colors[color_idx as usize];
+                        }
+                    }
+                    bit_mask = bit_mask >> 1;
+                }
+
+            }
+
+        }
+
     }
 
     pub fn draw_frame(&mut self){
-        self.window.update_with_buffer(&self.back_buffer, 160, 144).unwrap(); // Need to error handle.
+        self.window.update_with_buffer(&self.back_buffer, 160, 144).unwrap(); 
     }
 
     pub fn ppu_step(&mut self, m_cycles: u8){
@@ -170,7 +268,7 @@ impl PPU{
                     self.ppu_clock %= VBANK_CYCLES;
                     self.ly += 1;
 
-                    if(self.ly > 153){
+                    if self.ly > 153 {
                         self.ly = 0;
                         self.mode = PPU_MODE::OAM;
                     }
@@ -185,10 +283,14 @@ impl PPU{
 
     pub fn write_byte(&mut self, loc: u16, val: u8){
         match loc{
+            0xFE00..=0xFE9F => self.oam_mem[(loc - 0xFE00) as usize] = val,
+            0xFF40 => self.lcd_control = val,
             0xFF42 => self.scy = val,
             0xFF43 => self.scx = val,
             0xFF44 => self.ly = val,
             0xFF47 => self.bg_pallete = val,
+            0xFF48 => {self.obj_pallete_1 = val; println!("Changing obj pallete 1 ") },
+            0xFF49 => {self.obj_pallete_2 = val; println!("Changing obj pallete 2")},
             _ => self.vram[(loc - 0x8000) as usize] = val
         }
         
@@ -196,10 +298,15 @@ impl PPU{
 
     pub fn read_byte(&self, loc: u16) -> u8{
         match loc{
+            0xFE00..=0xFE9F => self.oam_mem[(loc - 0xFE00) as usize],
+            0xFF40 => self.lcd_control,
+            0xFF41 => self.lcd_stat,
             0xFF42 => self.scy,
             0xFF43 => self.scx,
             0xFF44 => self.ly,
             0xFF47 => self.bg_pallete,
+            0xFF48 => self.obj_pallete_1,
+            0xFF49 => self.obj_pallete_2,
             _ => self.vram[(loc - 0x8000) as usize] 
         }
     }

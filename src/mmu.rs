@@ -42,7 +42,7 @@ impl MMU{
                 self.cartridge.read_byte(loc)
             }
 
-            0xFF42 | 0xFF43 | 0xFF44| 0xFF47| VRAM_START..=VRAM_END => {
+            0xFE00..=0xFE9F | 0xFF40 | 0xFF42 | 0xFF43 | 0xFF44| 0xFF47..=0xFF49 | VRAM_START..=VRAM_END => {
                 self.ppu.read_byte(loc)
             }
 
@@ -81,12 +81,10 @@ impl MMU{
 
     pub fn write_byte(&mut self, loc: u16, val: u8){
         match loc{
-           
             0x0000..=0x7FFF => {
                 self.cartridge.write_byte(loc, val);
             }
-
-            0xFF42 | 0xFF43 | 0xFF44 | 0xFF47 | VRAM_START..=VRAM_END => {
+            0xFE00..=0xFE9F | 0xFF40 | 0xFF42 | 0xFF43 | 0xFF44 | 0xFF47..=0xFF49 | VRAM_START..=VRAM_END => {
                 self.ppu.write_byte(loc, val);
             }
             0xFF04..=0xFF07  => {
@@ -95,7 +93,6 @@ impl MMU{
             0xFF0F => {
                 self.update_interrupts(val);
             }
-
             _ => {self.mem[loc as usize] = val;}
         }
     }
