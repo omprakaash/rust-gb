@@ -26,6 +26,9 @@ const BG_WIND_ENABLE_BIT_POS: u8  = 0;
 // ----------------------------------------------
 
 
+// LCD STAT
+const STAT_LYC_BIT_POS: u8 = 6; 
+
 const WHITE: u32 = 0x00ffffff;
 
 enum PPU_MODE{
@@ -45,16 +48,19 @@ pub struct PPU{
 
     lcd_control: u8,   // Addr: 0xFF40
     lcd_stat: u8,      // Addr: 0xFF41 
-    ly: u8,            // Addr: 0xFF44 - Current Scanline number
-    scx: u8,           // Addr: 0xFF43
     scy: u8,           // Addr: 0xFF42
-
+    scx: u8,           // Addr: 0xFF43
+    ly: u8,            // Addr: 0xFF44 - Current Scanline number
+    lyc: u8,           // Addr: 0xFF45
     bg_pallete: u8,    // Addr: 0xFF47
     obj_pallete_1: u8, // Addr: 0xFF48
     obj_pallete_2: u8, // Addr: 0xFF49
 
     colors: [u32; 4],
-    sprite_line_data: [u8; 10] // Used to hold sprite data for current line
+    sprite_line_data:[u8; 10], // Used to hold sprite data for current line
+
+    pub interrupt: u8,
+
 }
 
 impl PPU{
@@ -83,14 +89,16 @@ impl PPU{
             oam_mem: [0; 160],
             lcd_control: 0x91,
             lcd_stat: 0xff,
-            ly: 0,
             scx: 0,
             scy: 0,
+            ly: 0,
+            lyc: 0, 
             bg_pallete: 0xFC,
             obj_pallete_1: 0xFF,
             obj_pallete_2: 0xFF,
             colors: [0x00ffffff ,0x00A0A0A0,0x00555555, 0 ], // Minifb pixel data format
-            sprite_line_data: [0; 10]
+            sprite_line_data: [0; 10],
+            interrupt: 0,
         }
     }
 
@@ -115,13 +123,13 @@ impl PPU{
                 let tile_num = self.vram[tile_num_addr as usize];
 
                 let tile_data_loc = if test_bit_u8(self.lcd_control, 4){ 
-                    0x8000 + (tile_num as u16 * 16) as u16 - 0x8000;
+                    (0x8000 + (tile_num as u16 * 16) as u16) - 0x8000
                 }
                 else{
-                    0x8800 + (tile_num as i16 * 16) as u16 - 0x8000;
+                    (0x8800 + (((tile_num as i8 as i16 + 128) as u16) * 16))  - 0x8000
                 };
 
-                let tile_data_loc: u16 = 0x8000 + (tile_num as u16 * 16) as u16 - 0x8000;
+                //let tile_data_loc: u16 = 0x8000 + (tile_num as u16 * 16) as u16 - 0x8000;
             
                 let row_byte_1 = self.vram[(tile_data_loc + (line_in_tile * 2) as u16) as usize];
                 let row_byte_2 = self.vram[(tile_data_loc + (line_in_tile * 2 + 1) as u16)  as usize];
@@ -181,8 +189,13 @@ impl PPU{
                     panic!("Line in sprite can not be greater than sprite size: LINE: {}, SPRITE SIZE: {} ", line_in_sprite, sprite_y_size);
                 }
 
-                let tile_data_loc: u16 = 0x8000 + (tile_num as u16 * 16) as u16 - 0x8000;
-            
+                let tile_data_loc = if test_bit_u8(self.lcd_control, 4){ 
+                    (0x8000 + (tile_num as u16 * 16) as u16) - 0x8000
+                }
+                else{
+                    (0x8800 + (((tile_num as i8 as i16 + 128) as u16) * 16))  - 0x8000
+                };
+
                 let row_byte_1 = self.vram[(tile_data_loc + (line_in_sprite * 2) as u16) as usize];
                 let row_byte_2 = self.vram[(tile_data_loc + (line_in_sprite * 2 + 1) as u16)  as usize];
                 let mut bit_mask = 0x80;
@@ -229,14 +242,17 @@ impl PPU{
 
     pub fn ppu_step(&mut self, m_cycles: u8){
         
-        self.ppu_clock += (m_cycles * 4) as u16; 
-
+        self.ppu_clock += (m_cycles * 4) as u16;
         match self.mode{
             PPU_MODE::OAM => {
                 if self.ppu_clock >= OAM_CYCLES{
                     self.mode = PPU_MODE::DRAW;
                     self.ppu_clock %= OAM_CYCLES;
                 }
+                if self.interrupt == 1{
+                    self.interrupt = 0;
+                }
+                
             },
             PPU_MODE::DRAW => {
                 if self.ppu_clock >= DRAW_CYCLES{
@@ -252,8 +268,15 @@ impl PPU{
 
                     self.ly += 1; // Increment Scanline
                     self.ppu_clock %= HBLANK_CYCLES;
-
                     self.mode = PPU_MODE::OAM;
+
+                    if test_bit_u8(self.lcd_stat,STAT_LYC_BIT_POS){
+                        //println!("STAT LYC ENABLES");
+                        if self.ly == self.lyc{
+                            //println!("Triggering interrupt");
+                            self.interrupt = 1;
+                        } 
+                    }
 
                     if self.ly == 143 {
 
@@ -262,6 +285,7 @@ impl PPU{
                         self.mode = PPU_MODE::VBLANK;
                     }
                 }
+                
             },
             PPU_MODE::VBLANK => {
                 if self.ppu_clock >= VBANK_CYCLES{
@@ -284,10 +308,12 @@ impl PPU{
     pub fn write_byte(&mut self, loc: u16, val: u8){
         match loc{
             0xFE00..=0xFE9F => self.oam_mem[(loc - 0xFE00) as usize] = val,
-            0xFF40 => self.lcd_control = val,
+            0xFF40 => { /*println!("Writing to lcdc: {:x?}", val); */self.lcd_control = val},
+            0xFF41 => self.lcd_stat = self.lcd_stat | (val & 0xF4), // Bits 0 through 2 are read only and set only by the PPU
             0xFF42 => self.scy = val,
             0xFF43 => self.scx = val,
             0xFF44 => self.ly = val,
+            0xFF45 => self.lyc = val,
             0xFF47 => self.bg_pallete = val,
             0xFF48 => {self.obj_pallete_1 = val; println!("Changing obj pallete 1 ") },
             0xFF49 => {self.obj_pallete_2 = val; println!("Changing obj pallete 2")},
@@ -304,6 +330,7 @@ impl PPU{
             0xFF42 => self.scy,
             0xFF43 => self.scx,
             0xFF44 => self.ly,
+            0xFF45 => self.lyc,
             0xFF47 => self.bg_pallete,
             0xFF48 => self.obj_pallete_1,
             0xFF49 => self.obj_pallete_2,

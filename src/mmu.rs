@@ -42,7 +42,7 @@ impl MMU{
                 self.cartridge.read_byte(loc)
             }
 
-            0xFE00..=0xFE9F | 0xFF40 | 0xFF42 | 0xFF43 | 0xFF44| 0xFF47..=0xFF49 | VRAM_START..=VRAM_END => {
+            0xFE00..=0xFE9F | 0xFF40 | 0xFF42 | 0xFF43 | 0xFF44| 0xFF45 |0xFF47..=0xFF49 | VRAM_START..=VRAM_END => {
                 self.ppu.read_byte(loc)
             }
 
@@ -52,7 +52,7 @@ impl MMU{
             0xFF0F => {
                 //let mut ret = self.mem[loc as usize];
                 let mut ret = 0xE0;
-                ret = ret | (self.timer.interrupt << 2) | (self.serial_interrupt << 3);
+                ret = ret | (self.ppu.interrupt << 1)  |(self.timer.interrupt << 2) | (self.serial_interrupt << 3);
                
                 ret
             },
@@ -84,7 +84,7 @@ impl MMU{
             0x0000..=0x7FFF => {
                 self.cartridge.write_byte(loc, val);
             }
-            0xFE00..=0xFE9F | 0xFF40 | 0xFF42 | 0xFF43 | 0xFF44 | 0xFF47..=0xFF49 | VRAM_START..=VRAM_END => {
+            0xFE00..=0xFE9F | 0xFF40 | 0xFF42 | 0xFF43 | 0xFF44  | 0xFF45| 0xFF47..=0xFF49 | VRAM_START..=VRAM_END => {
                 self.ppu.write_byte(loc, val);
             }
             0xFF04..=0xFF07  => {

@@ -84,6 +84,9 @@ impl<'a> CPU<'a>{
                     self.mmu.write_byte(0xFF0F, if_flag); // Temp Sol. Need to check and change
                     self.push(self.reg.pc);
                     self.reg.pc = self.interrupt_routines[bit_pos as usize];
+
+                    //println!("Servicing interrupt with bitpos: {}", bit_pos);
+
                     return; // Check
                 }
             }
