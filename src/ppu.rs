@@ -21,13 +21,17 @@ const WINDOW_DISPLAY_MASK: u8     = 0b00100000;
 const TILE_DATA_SELECT_MASK: u8   = 0b00010000;
 const BG_MAP_SELECT_POS: u8      =  3;
 const SPRITE_SIZE_BIT_POS: u8     = 2;
-const SPRITE_ENABLE_MASK: u8      = 0b00000010;
+const SPRITE_ENABLE_MASK: u8      = 1;
 const BG_WIND_ENABLE_BIT_POS: u8  = 0;
 // ----------------------------------------------
 
 
-// LCD STAT
+// ---------------LCD STAT Bit Positions ----------
 const STAT_LYC_BIT_POS: u8 = 6; 
+const STAT_COINCIDENCE_BIT_POS:u8 = 2;
+
+
+//-------------------------------------------------
 
 const WHITE: u32 = 0x00ffffff;
 
@@ -68,7 +72,7 @@ impl PPU{
         PPU{
             ppu_clock: 0,
             mode: PPU_MODE::VBLANK, // Check : TODO
-            back_buffer : [1; 160*144],
+            back_buffer : [0x00ffffffff; 160*144],
             window : Window::new(
                 "Rust-gb",
                 WIDTH,
@@ -159,80 +163,92 @@ impl PPU{
         // Rendering Sprites
 
         // For each sprite in OAM check if sprite appears in current scanline
-        for oam_idx in 0..40{
+        if test_bit_u8(self.lcd_control, SPRITE_ENABLE_MASK){
+            for oam_idx in 0..40{
 
-            let y_pos:i32 = self.oam_mem[oam_idx*4] as i32 - 16;
-            let x_pos:i32 = self.oam_mem[oam_idx*4 + 1] as i32 - 8;
-            let tile_num = self.oam_mem[oam_idx*4 + 2];
-            let sprite_attr = self.oam_mem[oam_idx*4 + 3];
-            let sprite_y_size: i32 = if test_bit_u8(self.lcd_control, SPRITE_SIZE_BIT_POS){
-                16
-            }else{
-                8
-            };
-            let x_flip = test_bit_u8(sprite_attr, 5 );
-            let y_flip = test_bit_u8(sprite_attr, 6 ) ;
-
-            //println!("Y_Pos: {}, sprite_y_size: {}, LY: {}", y_pos, sprite_y_size, self.ly);
-
-            if self.ly >= (y_pos as u8) && (self.ly as i32) < y_pos + sprite_y_size{
-
-                //println!("Hello");
-
-                let mut line_in_sprite = self.ly - (y_pos as u8);
-
-                if y_flip{
-                    line_in_sprite = sprite_y_size as u8 - line_in_sprite - 1 ;
-                }
-
-                if line_in_sprite as i32 >= sprite_y_size{
-                    panic!("Line in sprite can not be greater than sprite size: LINE: {}, SPRITE SIZE: {} ", line_in_sprite, sprite_y_size);
-                }
-
-                let tile_data_loc = if test_bit_u8(self.lcd_control, 4){ 
-                    (0x8000 + (tile_num as u16 * 16) as u16) - 0x8000
-                }
-                else{
-                    (0x8800 + (((tile_num as i8 as i16 + 128) as u16) * 16))  - 0x8000
+                let y_pos:i32 = self.oam_mem[oam_idx*4] as i32 - 16;
+                let x_pos:i32 = self.oam_mem[oam_idx*4 + 1] as i32 - 8;
+                let mut tile_num = self.oam_mem[oam_idx*4 + 2];
+                let sprite_attr = self.oam_mem[oam_idx*4 + 3];
+                let sprite_y_size: i32 = if test_bit_u8(self.lcd_control, SPRITE_SIZE_BIT_POS){
+                    16
+                }else{
+                    8
                 };
+                let x_flip = test_bit_u8(sprite_attr, 5 );
+                let y_flip = test_bit_u8(sprite_attr, 6 ) ;
+    
+                //println!("Y_Pos: {}, sprite_y_size: {}, LY: {}", y_pos, sprite_y_size, self.ly);
+    
+                if self.ly >= (y_pos as u8) && (self.ly as i32) < y_pos + sprite_y_size{
+    
+                    //println!("Hello");
+    
+                    let mut line_in_sprite = self.ly - (y_pos as u8);
+    
+                    if y_flip{
+                        line_in_sprite = sprite_y_size as u8 - line_in_sprite - 1 ;
+                    }
+    
+                    if line_in_sprite as i32 >= sprite_y_size{
+                        panic!("Line in sprite can not be greater than sprite size: LINE: {}, SPRITE SIZE: {} ", line_in_sprite, sprite_y_size);
+                    }
 
-                let row_byte_1 = self.vram[(tile_data_loc + (line_in_sprite * 2) as u16) as usize];
-                let row_byte_2 = self.vram[(tile_data_loc + (line_in_sprite * 2 + 1) as u16)  as usize];
-                let mut bit_mask = 0x80;
-
-                // Stepping through the 8 pixels in a sprites row
-                for sprite_col in 0..8{
-                    //println!("X_pos: {}, sprite_col: {}", x_pos, sprite_col);
-                    if(x_pos + sprite_col) >= 0{
-                        let mut a = sprite_col;
-                        if x_flip{
-                            //println!("OLd {}", sprite_col);
-                            a = 7 - sprite_col;
+                    if sprite_y_size == 16 {
+                        if line_in_sprite < 8{
+                            tile_num &= 0xFE;
                         }
-
-                        let high_bit = (row_byte_2 >> (7 - a )) & 0x01;
-                        let low_bit = (row_byte_1  >> (7 -  a )) & 0x01;
-                        let color_num = (high_bit << 1) | low_bit;
-                        
-                        let color_idx =  if test_bit_u8(sprite_attr, 4)
-                        {
-                            (self.obj_pallete_2 >> (color_num*2)) & 0x03
-                        }else{
-                            (self.obj_pallete_1 >> (color_num*2)) & 0x03
-                        };
-                        
-                        let color = self.colors[color_idx as usize];
-                        //println!("Drawing a sprite !");
-                        if color != WHITE  {
-                            self.back_buffer[ (self.ly as u16 * 160 + (x_pos + sprite_col) as u16) as usize ] = self.colors[color_idx as usize];
+                        else{
+                            tile_num |= 0x01;
                         }
                     }
-                    bit_mask = bit_mask >> 1;
+                    
+                    let tile_data_loc = if test_bit_u8(self.lcd_control, 4){ 
+                        (0x8000 + (tile_num as u16 * 16) as u16) - 0x8000
+                    }
+                    else{
+                        (0x8800 + (((tile_num as i8 as i16 + 128) as u16) * 16))  - 0x8000
+                    };
+    
+                    let row_byte_1 = self.vram[(tile_data_loc + (line_in_sprite * 2) as u16) as usize];
+                    let row_byte_2 = self.vram[(tile_data_loc + (line_in_sprite * 2 + 1) as u16)  as usize];
+                    let mut bit_mask = 0x80;
+    
+                    // Stepping through the 8 pixels in a sprites row
+                    for sprite_col in 0..8{
+                        //println!("X_pos: {}, sprite_col: {}", x_pos, sprite_col);
+                        if(x_pos + sprite_col) >= 0{
+                            let mut a = sprite_col;
+                            if x_flip{
+                                //println!("OLd {}", sprite_col);
+                                a = 7 - sprite_col;
+                            }
+    
+                            let high_bit = (row_byte_2 >> (7 - a )) & 0x01;
+                            let low_bit = (row_byte_1  >> (7 -  a )) & 0x01;
+                            let color_num = (high_bit << 1) | low_bit;
+                            
+                            let color_idx =  if test_bit_u8(sprite_attr, 4)
+                            {
+                                (self.obj_pallete_2 >> (color_num*2)) & 0x03
+                            }else{
+                                (self.obj_pallete_1 >> (color_num*2)) & 0x03
+                            };
+                            
+                            let color = self.colors[color_idx as usize];
+                            //println!("Drawing a sprite !");
+                            if color != WHITE  {
+                                self.back_buffer[ (self.ly as u16 * 160 + (x_pos + sprite_col) as u16) as usize ] = self.colors[color_idx as usize];
+                            }
+                        }
+                        bit_mask = bit_mask >> 1;
+                    }
+    
                 }
-
+    
             }
-
         }
+        
 
     }
 
@@ -270,12 +286,11 @@ impl PPU{
                     self.ppu_clock %= HBLANK_CYCLES;
                     self.mode = PPU_MODE::OAM;
 
-                    if test_bit_u8(self.lcd_stat,STAT_LYC_BIT_POS){
-                        //println!("STAT LYC ENABLES");
-                        if self.ly == self.lyc{
-                            //println!("Triggering interrupt");
+                    if self.ly == self.lyc {
+                        if test_bit_u8(self.lcd_stat,STAT_LYC_BIT_POS){
                             self.interrupt = 1;
                         } 
+                        self.lcd_stat |= 0x01 << STAT_COINCIDENCE_BIT_POS;        
                     }
 
                     if self.ly == 143 {
