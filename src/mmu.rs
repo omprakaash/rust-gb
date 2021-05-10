@@ -46,14 +46,23 @@ impl MMU{
                 self.ppu.read_byte(loc)
             }
 
+            // To counter bug in cpu_instr test
+            0xFF4D =>{
+                0xFF
+            }
+
             0xFF04..=0xFF07 => {
                 self.timer.read_byte(loc)
             },
             0xFF0F => {
                 //let mut ret = self.mem[loc as usize];
                 let mut ret = 0xE0;
-                ret = ret | (self.ppu.interrupt << 1)  |(self.timer.interrupt << 2) | (self.serial_interrupt << 3);
+                ret = ret | (self.ppu.vblank_interrupt) | (self.ppu.stat_interrupt << 1)  |(self.timer.interrupt << 2) | (self.serial_interrupt << 3);
                
+                if ((ret >> 2) & 1) == 1{
+                    println!("Finally a timer INTERRUPT");
+                }
+
                 ret
             },
             _ => self.mem[loc as usize]

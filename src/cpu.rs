@@ -870,7 +870,7 @@ impl<'a> CPU<'a>{
     }
 
     fn inc_hl(&mut self){
-        let val = self.reg.get_hl() + 1;
+        let val = self.reg.get_hl().wrapping_add(1);
         self.reg.set_hl(val);
     }
 

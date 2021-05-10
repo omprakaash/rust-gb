@@ -40,10 +40,10 @@ impl Timer{
 
 pub fn write_byte(&mut self, loc: u16, val: u8){
         match loc{
-            0xFF04 => self.div = 0x00,
+            0xFF04 => { self.div = 0x00; self.div_helper = 0; self.time_helper = 0},
             0xFF05 => self.tima = val,
             0xFF06 => self.tma = val,
-            0xFF07 => {self.tac = val; /*println!("Writing to TAC: {}", val)*/},
+            0xFF07 => {self.tac = val; },
             0xFF0F => {
                 if (val & 0x04) > 0 {
                     self.interrupt = 1;
@@ -56,42 +56,39 @@ pub fn write_byte(&mut self, loc: u16, val: u8){
         }   
     }
 
-    pub fn step_cycle(&mut self, mut m_cycles: u8){
-        
-        self.div_helper += (m_cycles) as u16; 
-        if self.div_helper > 255 {
-            self.div_helper -= 255;
-            self.div += 1;
-            self.write_byte(0xFF04, self.div);
-        }
+pub fn step_cycle(&mut self, m_cycles: u8){
+    
+    self.div_helper += (m_cycles * 4  ) as u16; 
+    if self.div_helper > 255 {
+        self.div_helper -= 255;
+        self.div = self.div.wrapping_add(1);
+    }
+
+    if ((self.tac >> 2) & 0x01) != 0{ // If timer is enabled
 
         self.time_helper = self.time_helper.wrapping_add((m_cycles * 4) as u16);
 
-        if (self.tac >> 2) & 0x01 != 0{ // If timer is enabled
-            let mut freq:u32 = 4096;
-            if (self.tac & 3) == 1{
-                freq = 262144;
-            }
-            else if(self.tac & 3) == 2{
-                freq = 65536;
-            }
-            else if (self.tac & 3) == 3{
-                freq = 16384;
-            }
-
-            //println!("{}", self.time_helper);
-            while self.time_helper >= (4194304 / freq) as u16 {
-                //print!("Adding");
-                self.tima = self.tima.wrapping_add(1);
-                if self.tima == 0{
-                    //print!("Setting Interrupt");
-                    self.interrupt = 1;
-                    self.tima = self.tma;
-                }
-                self.time_helper -= (4194304 / freq) as u16 ;
-            }
-
+        let mut freq:u32 = 4096;
+        if (self.tac & 3) == 1{
+            freq = 262144;
         }
+        else if(self.tac & 3) == 2{
+            freq = 65536;
+        }
+        else if (self.tac & 3) == 3{
+            freq = 16384;
+        }
+
+        while self.time_helper >= (4194304 / freq) as u16 {
+            self.tima = self.tima.wrapping_add(1);
+            if self.tima == 0{
+                self.interrupt = 1;
+                self.tima = self.tma;
+            }
+            self.time_helper -=  (4194304 / freq) as u16 ;
+        }
+
     }
+}
 
 }

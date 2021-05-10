@@ -63,7 +63,8 @@ pub struct PPU{
     colors: [u32; 4],
     sprite_line_data:[u8; 10], // Used to hold sprite data for current line
 
-    pub interrupt: u8,
+    pub stat_interrupt: u8,
+    pub vblank_interrupt: u8,
 
 }
 
@@ -102,14 +103,12 @@ impl PPU{
             obj_pallete_2: 0xFF,
             colors: [0x00ffffff ,0x00A0A0A0,0x00555555, 0 ], // Minifb pixel data format
             sprite_line_data: [0; 10],
-            interrupt: 0,
+            stat_interrupt: 0,
+            vblank_interrupt:0, 
         }
     }
 
-
-    pub fn fill_scanline(&mut self){
-
-        // Render Background
+    fn render_background_line(&mut self){
         if test_bit_u8(self.lcd_control, BG_WIND_ENABLE_BIT_POS)  {
             let background_map_line = self.ly.wrapping_add(self.scy+1); // Check the +1
         
@@ -158,12 +157,13 @@ impl PPU{
 
                 }   
             }
-        }
+        } // Else {Draw color 0 ?? - TODO}
+    }
 
-        // Rendering Sprites
+    fn render_sprites_in_line(&mut self){
 
-        // For each sprite in OAM check if sprite appears in current scanline
         if test_bit_u8(self.lcd_control, SPRITE_ENABLE_MASK){
+            // For each sprite in OAM check if sprite appears in current scanline
             for oam_idx in 0..40{
 
                 let y_pos:i32 = self.oam_mem[oam_idx*4] as i32 - 16;
@@ -248,6 +248,23 @@ impl PPU{
     
             }
         }
+
+    }
+
+    pub fn render_window_line(&mut self){
+
+    }
+
+    pub fn fill_scanline(&mut self){
+
+        // Render Background
+        self.render_background_line();
+
+        // Render Window
+        self.render_window_line();
+
+        // Rendering Sprites
+        self.render_sprites_in_line();
         
 
     }
@@ -265,8 +282,8 @@ impl PPU{
                     self.mode = PPU_MODE::DRAW;
                     self.ppu_clock %= OAM_CYCLES;
                 }
-                if self.interrupt == 1{
-                    self.interrupt = 0;
+                if self.stat_interrupt == 1{
+                    self.stat_interrupt = 0;
                 }
                 
             },
@@ -288,7 +305,7 @@ impl PPU{
 
                     if self.ly == self.lyc {
                         if test_bit_u8(self.lcd_stat,STAT_LYC_BIT_POS){
-                            self.interrupt = 1;
+                            self.stat_interrupt = 1;
                         } 
                         self.lcd_stat |= 0x01 << STAT_COINCIDENCE_BIT_POS;        
                     }
@@ -298,11 +315,15 @@ impl PPU{
                         // Update Window's buffer with new data                            
                         self.draw_frame();
                         self.mode = PPU_MODE::VBLANK;
+
+                        self.vblank_interrupt = 1;
+
                     }
                 }
                 
             },
             PPU_MODE::VBLANK => {
+                self.vblank_interrupt = 0;
                 if self.ppu_clock >= VBANK_CYCLES{
                     self.ppu_clock %= VBANK_CYCLES;
                     self.ly += 1;
@@ -330,8 +351,8 @@ impl PPU{
             0xFF44 => self.ly = val,
             0xFF45 => self.lyc = val,
             0xFF47 => self.bg_pallete = val,
-            0xFF48 => {self.obj_pallete_1 = val; println!("Changing obj pallete 1 ") },
-            0xFF49 => {self.obj_pallete_2 = val; println!("Changing obj pallete 2")},
+            0xFF48 => {self.obj_pallete_1 = val; /*println!("Changing obj pallete 1 ")*/ },
+            0xFF49 => {self.obj_pallete_2 = val; /*println!("Changing obj pallete 2")*/},
             _ => self.vram[(loc - 0x8000) as usize] = val
         }
         
