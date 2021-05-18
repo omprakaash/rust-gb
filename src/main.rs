@@ -35,8 +35,8 @@ fn main() {
                 while now.elapsed().as_millis() < (16.67 as u128){
                     
                 }
+                now = Instant::now();
             }
             
     }
-
 }

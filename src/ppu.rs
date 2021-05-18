@@ -15,7 +15,7 @@ const HBLANK_CYCLES:u16 = 204;
 const VBANK_CYCLES: u16 = 456;
 
 // -------------- LCDC Masks --------------------
-const LCD_DISPLAY_ENABLE_MASK :u8 = 0b10000000;
+const LCD_DISPLAY_ENABLE_BIT_POS :u8 = 7;
 const WINDOW_TILE_MAP_MASK: u8    = 0b01000000;
 const WINDOW_DISPLAY_MASK: u8     = 0b00100000;
 const TILE_DATA_SELECT_MASK: u8   = 0b00010000;
@@ -42,11 +42,11 @@ enum PPU_MODE{
     DRAW
 }
 
-pub struct PPU{
+pub struct PPU {
     ppu_clock: u16,
     mode: PPU_MODE,
     back_buffer: [u32; 160*144],
-    window: Window,
+    pub window: Window,
     vram: [u8; 8192],
     oam_mem: [u8; 160], // 0xFE00 - 0xFE9F
 
@@ -68,7 +68,7 @@ pub struct PPU{
 
 }
 
-impl PPU{
+impl PPU {
     pub fn new() -> PPU{
         PPU{
             ppu_clock: 0,
@@ -316,7 +316,9 @@ impl PPU{
                         self.draw_frame();
                         self.mode = PPU_MODE::VBLANK;
 
-                        self.vblank_interrupt = 1;
+                        if test_bit_u8(self.lcd_stat, LCD_DISPLAY_ENABLE_BIT_POS){
+                            self.vblank_interrupt = 1;
+                        }
 
                     }
                 }
